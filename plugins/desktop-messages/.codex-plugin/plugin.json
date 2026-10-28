@@ -1,0 +1,6 @@
+{
+  "name": "desktop-messages",
+  "version": "0.2.1",
+  "description": "Read and send through the desktop-selected WhatsApp/Telegram chat with Codex thread/turn routing. Account sessions stay in the independent remote gateway.",
+  "mcpServers": "./.mcp.json"
+}

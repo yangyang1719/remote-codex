@@ -1,0 +1,49 @@
+.build/
+build/
+artifacts/
+.DS_Store
+.playwright-mcp/
+*.png
+!packaging/AppIcon.png
+__pycache__/
+*.pyc
+.state/
+node_modules/
+
+# Local project memory; keep on disk and out of published source.
+MEMORY_PALACE.md
+MEMORY.md
+memory_summary.md
+memories/
+
+# Internal desktop tests and production acceptance records stay local.
+/Tests/
+/docs/STATUS.md
+/docs/SHARED_SESSIONS.md
+
+# Local credentials and runtime data.
+.env
+.env.*
+!.env.example
+!.env.sample
+.ssh/
+id_rsa
+id_ed25519
+*.pem
+*.key
+auth.json
+creds.json
+*.sqlite
+*.sqlite3
+*.sqlite-wal
+*.sqlite-shm
+*.db
+*.db-wal
+*.db-shm
+
+# Private original design, research, deployment and live-environment tooling.
+/Design/approved-prototype.html
+/docs/research/
+/scripts/deploy-*.py
+/scripts/verify-*.py
+/scripts/remote-whatsapp-admin.py

@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "desktop-messages": {
+      "command": "python3",
+      "args": [
+        "-c",
+        "import os,runpy; runpy.run_path(os.environ.get('REMOTE_CODEX_MCP_SCRIPT',os.path.expanduser('~/.local/share/remote-codex/current/gateway/routed_mcp_server.py')),run_name='__main__')",
+        "--desktop-route-v2"
+      ]
+    }
+  }
+}

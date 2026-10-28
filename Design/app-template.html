@@ -1,0 +1,430 @@
+<div id="codex-message-concept" aria-label="Codex 风格客户端与可收起的消息侧栏">
+  <style>
+    #codex-message-concept {
+      --app-surface: light-dark(#ffffff, #202020);
+      --app-sidebar: light-dark(#f4f3f0, #191919);
+      --app-soft: light-dark(#f6f6f4, #292929);
+      --app-hover: light-dark(#eae9e5, #303030);
+      --app-selected: light-dark(#e7e6e1, #343434);
+      --app-text: light-dark(#292824, #eeede9);
+      --app-muted: light-dark(#7a7871, #a6a49e);
+      --app-line: light-dark(#e7e6e1, #343432);
+      --app-strong: light-dark(#292824, #ecebe6);
+      --app-on-strong: light-dark(#ffffff, #242421);
+      --app-green: light-dark(#32815b, #86bc9a);
+      --app-red: light-dark(#ac655f, #d4958e);
+      --app-wa: light-dark(#43825f, #8cc8a3);
+      --app-tg: light-dark(#4b7b9e, #8bb8d7);
+      --app-shadow: light-dark(#22221c0a, #00000020);
+      --message-width: 302px;
+      --navigation-width: 181px;
+      --right-width: var(--message-width);
+      color-scheme: light dark;
+      color: var(--app-text);
+      font: 13px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif;
+      width: 100%;
+    }
+    #codex-message-concept *, #codex-message-concept *::before, #codex-message-concept *::after { box-sizing: border-box; }
+    #codex-message-concept [hidden] { display: none !important; }
+    #codex-message-concept button, #codex-message-concept textarea { font: inherit; color: inherit; }
+    #codex-message-concept button { -webkit-tap-highlight-color: transparent; }
+    #codex-message-concept button:focus-visible, #codex-message-concept textarea:focus-visible { outline: 2px solid var(--app-muted); outline-offset: 3px; }
+    #codex-message-concept button { border: 0; background: transparent; }
+    #codex-message-concept button:hover { background: var(--app-hover); }
+    #codex-message-concept .app { background: var(--app-surface); border: 1px solid var(--app-line); border-radius: 13px; overflow: clip; box-shadow: 0 10px 36px var(--app-shadow); }
+    #codex-message-concept .chrome { height: 49px; display: flex; align-items: center; gap: 10px; padding: 0 13px 0 16px; background: var(--app-sidebar); border-bottom: 1px solid var(--app-line); }
+    #codex-message-concept .traffic { display: flex; gap: 7px; margin-right: 10px; }
+    #codex-message-concept .traffic span { width: 10px; height: 10px; border: 1px solid var(--app-line); border-radius: 50%; background: var(--app-hover); }
+    #codex-message-concept .chrome-title { font-size: 12px; color: var(--app-muted); }
+    #codex-message-concept .chrome-end { margin-left: auto; color: var(--app-muted); font-size: 11px; padding-right: 5px; }
+    #codex-message-concept .icon { width: 16px; height: 16px; flex: 0 0 auto; }
+    #codex-message-concept .icon-button { width: 29px; height: 29px; display: inline-flex; justify-content: center; align-items: center; border-radius: 6px; padding: 0; }
+    #codex-message-concept .workspace { display: grid; grid-template-columns: var(--navigation-width) minmax(0, 1fr) var(--right-width); min-height: 622px; }
+    #codex-message-concept.is-collapsed { --right-width: 0px; }
+    #codex-message-concept.is-nav-collapsed { --navigation-width: 0px; }
+    #codex-message-concept .navigation { grid-column: 1; grid-row: 1; display: flex; flex-direction: column; min-width: 0; padding: 13px 10px 11px; background: var(--app-sidebar); }
+    #codex-message-concept .nav-button { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 8px 9px; border-radius: 7px; font-size: 12px; }
+    #codex-message-concept .nav-button .shortcut { margin-left: auto; font-size: 10px; color: var(--app-muted); }
+    #codex-message-concept .nav-label { margin: 24px 9px 8px; color: var(--app-muted); font-size: 11px; }
+    #codex-message-concept .project { display: flex; align-items: center; gap: 7px; padding: 6px 7px; font-weight: 500; font-size: 12px; }
+    #codex-message-concept .project .icon { width: 14px; height: 14px; color: var(--app-muted); }
+    #codex-message-concept .session { padding: 8px 8px 8px 23px; border-radius: 7px; font-size: 11px; overflow-wrap: anywhere; }
+    #codex-message-concept .session.active { background: var(--app-selected); }
+    #codex-message-concept .session.inactive { color: var(--app-muted); }
+    #codex-message-concept .nav-bottom { margin-top: auto; padding-top: 25px; }
+    #codex-message-concept .account { display: flex; align-items: center; gap: 8px; padding: 10px 7px 0; font-size: 12px; }
+    #codex-message-concept .account-avatar { width: 23px; height: 23px; border: 1px solid var(--app-line); border-radius: 50%; display: grid; place-items: center; font-size: 10px; }
+    #codex-message-concept .chat { grid-column: 2; grid-row: 1; display: flex; flex-direction: column; min-width: 0; border-left: 1px solid var(--app-line); }
+    #codex-message-concept.is-nav-collapsed .chat { border-left: 0; }
+    #codex-message-concept .chat-header { display: flex; align-items: center; gap: 9px; padding: 16px 21px 13px; min-height: 67px; }
+    #codex-message-concept .chat-heading { min-width: 0; }
+    #codex-message-concept .chat-heading h2 { font-size: 13px; font-weight: 500; line-height: 1.4; margin: 0; }
+    #codex-message-concept .location { display: flex; align-items: center; gap: 5px; color: var(--app-muted); font-size: 10px; margin-top: 3px; }
+    #codex-message-concept .location .icon { width: 11px; height: 11px; }
+    #codex-message-concept .messages-toggle { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px; padding: 5px 8px; border: 1px solid var(--app-line); border-radius: 7px; font-size: 11px; background: var(--app-surface); }
+    #codex-message-concept .unread { display: grid; place-items: center; min-width: 16px; height: 16px; background: var(--app-selected); border-radius: 5px; padding: 0 3px; font-size: 10px; }
+    #codex-message-concept .transcript { flex: 1; padding: 26px 25px 15px; }
+    #codex-message-concept .user-message { background: var(--app-soft); max-width: 91%; width: fit-content; margin: 0 0 24px auto; padding: 11px 14px; border-radius: 13px 13px 3px 13px; font-size: 12px; }
+    #codex-message-concept .assistant-message { font-size: 12px; line-height: 1.9; }
+    #codex-message-concept .assistant-message p { margin: 0 0 14px; }
+    #codex-message-concept .tool-line { display: flex; align-items: center; gap: 7px; color: var(--app-muted); margin: 17px 0; font-size: 11px; }
+    #codex-message-concept .tool-line .icon { width: 13px; height: 13px; }
+    #codex-message-concept .file-change { border: 1px solid var(--app-line); border-radius: 8px; margin-top: 17px; }
+    #codex-message-concept .file-row { display: flex; align-items: center; gap: 7px; padding: 9px 10px; font-size: 11px; }
+    #codex-message-concept .file-row .icon { width: 13px; height: 13px; color: var(--app-muted); }
+    #codex-message-concept .file-stats { margin-left: auto; white-space: nowrap; font-size: 10px; }
+    #codex-message-concept .additions { color: var(--app-green); }
+    #codex-message-concept .deletions { color: var(--app-red); }
+    #codex-message-concept .chat-actions { display: flex; gap: 8px; margin-top: 12px; color: var(--app-muted); }
+    #codex-message-concept .chat-actions .icon { width: 13px; height: 13px; }
+    #codex-message-concept .compose-wrap { padding: 11px 21px 14px; }
+    #codex-message-concept .composer { border: 1px solid var(--app-line); border-radius: 15px; padding: 11px 12px 8px; box-shadow: 0 2px 8px var(--app-shadow); }
+    #codex-message-concept textarea { display: block; background: transparent; border: 0; resize: none; width: 100%; min-width: 0; color: var(--app-text); }
+    #codex-message-concept textarea::placeholder { color: var(--app-muted); opacity: 1; }
+    #codex-message-concept .codex-input { min-height: 54px; max-height: 110px; font-size: 12px; line-height: 1.65; padding: 2px 1px; }
+    #codex-message-concept .composer-footer { display: flex; align-items: center; gap: 8px; color: var(--app-muted); font-size: 10px; }
+    #codex-message-concept .model { display: inline-flex; align-items: center; gap: 5px; }
+    #codex-message-concept .model .icon { width: 11px; height: 11px; }
+    #codex-message-concept .send { margin-left: auto; width: 27px; height: 27px; border-radius: 50%; background: var(--app-strong); color: var(--app-on-strong); display: grid; place-items: center; padding: 0; }
+    #codex-message-concept .send:hover { background: var(--app-muted); }
+    #codex-message-concept .send .icon { width: 15px; height: 15px; }
+    #codex-message-concept .source-chip { display: flex; align-items: flex-start; gap: 7px; background: var(--app-soft); border-radius: 8px; padding: 8px; margin-bottom: 8px; font-size: 11px; }
+    #codex-message-concept .source-chip > .icon { width: 13px; height: 13px; color: var(--app-muted); margin-top: 2px; }
+    #codex-message-concept .source-copy { flex: 1; min-width: 0; }
+    #codex-message-concept .source-label { font-size: 10px; color: var(--app-muted); }
+    #codex-message-concept .source-excerpt { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #codex-message-concept .source-chip .icon-button { width: 18px; height: 18px; }
+    #codex-message-concept .messages { grid-column: 3; grid-row: 1; display: flex; flex-direction: column; min-width: 0; border-left: 1px solid var(--app-line); background: var(--app-surface); }
+    #codex-message-concept .platforms { display: flex; gap: 5px; padding: 16px 13px 12px; border-bottom: 1px solid var(--app-line); }
+    #codex-message-concept .platform { display: flex; align-items: center; justify-content: center; gap: 5px; flex: 1; padding: 6px 8px; border-radius: 6px; font-size: 11px; color: var(--app-muted); }
+    #codex-message-concept .platform[aria-selected="true"] { background: var(--app-soft); color: var(--app-text); }
+    #codex-message-concept .platform .icon { width: 13px; height: 13px; }
+    #codex-message-concept .platform[data-platform="wa"] .icon { color: var(--app-wa); }
+    #codex-message-concept .platform[data-platform="tg"] .icon { color: var(--app-tg); }
+    #codex-message-concept .conversation-switcher { position: relative; z-index: 2; padding: 6px 8px 0; }
+    #codex-message-concept .conversation-heading { width: 100%; padding: 9px 7px; display: flex; align-items: center; gap: 8px; text-align: left; border-radius: 8px; }
+    #codex-message-concept .conversation-heading:hover, #codex-message-concept .conversation-heading[aria-expanded="true"] { background: var(--app-soft); }
+    #codex-message-concept .conversation-heading .contact-copy { flex: 1; min-width: 0; }
+    #codex-message-concept .conversation-heading > .icon { width: 13px; height: 13px; color: var(--app-muted); margin-left: auto; }
+    #codex-message-concept .conversation-picker { position: absolute; top: calc(100% + 3px); left: 6px; right: 6px; padding: 7px; background: var(--app-surface); border: 1px solid var(--app-line); border-radius: 11px; box-shadow: 0 10px 28px var(--app-shadow), 0 3px 10px var(--app-shadow); }
+    #codex-message-concept .picker-title { color: var(--app-muted); font-size: 10px; padding: 5px 7px 6px; }
+    #codex-message-concept .picker-section { color: var(--app-muted); font-size: 10px; padding: 9px 7px 4px; }
+    #codex-message-concept .conversation-option { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 7px; text-align: left; border-radius: 7px; }
+    #codex-message-concept .conversation-option[aria-pressed="true"] { background: var(--app-soft); }
+    #codex-message-concept .option-avatar { width: 27px; height: 27px; display: grid; place-items: center; flex: 0 0 auto; border: 1px solid var(--app-line); border-radius: 8px; color: var(--app-muted); }
+    #codex-message-concept .option-avatar .icon { width: 13px; height: 13px; }
+    #codex-message-concept .option-copy { flex: 1; min-width: 0; }
+    #codex-message-concept .option-name { font-size: 11px; font-weight: 500; }
+    #codex-message-concept .option-preview { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 10px; color: var(--app-muted); margin-top: 2px; }
+    #codex-message-concept .conversation-option > .icon { width: 13px; height: 13px; color: var(--app-muted); }
+    #codex-message-concept .contact-avatar { width: 29px; height: 29px; border-radius: 9px; background: var(--app-soft); display: grid; place-items: center; font-size: 11px; flex: 0 0 auto; }
+    #codex-message-concept .conversation-name { font-size: 12px; font-weight: 500; }
+    #codex-message-concept .conversation-meta { color: var(--app-muted); font-size: 10px; }
+    #codex-message-concept .conversation-feed { flex: 1; padding: 5px 14px 14px; }
+    #codex-message-concept .day-divider { display: flex; align-items: center; gap: 9px; color: var(--app-muted); font-size: 10px; margin: 8px 0 15px; }
+    #codex-message-concept .day-divider::before, #codex-message-concept .day-divider::after { content: ""; height: 1px; flex: 1; background: var(--app-line); }
+    #codex-message-concept .message-item { border: 1px solid transparent; border-radius: 9px; padding: 8px 9px 5px; margin-bottom: 12px; }
+    #codex-message-concept .message-item.is-quoted { border-color: var(--app-line); background: var(--app-soft); }
+    #codex-message-concept .message-author { color: var(--app-muted); display: flex; align-items: center; gap: 7px; font-size: 10px; margin-bottom: 5px; }
+    #codex-message-concept .message-author time { margin-left: auto; }
+    #codex-message-concept .message-text { font-size: 12px; line-height: 1.75; overflow-wrap: anywhere; }
+    #codex-message-concept .message-bottom { display: flex; justify-content: flex-end; padding-top: 6px; }
+    #codex-message-concept .quote-button { display: inline-flex; align-items: center; gap: 4px; padding: 4px 5px; border-radius: 5px; color: var(--app-muted); font-size: 10px; }
+    #codex-message-concept .quote-button .icon { width: 11px; height: 11px; }
+    #codex-message-concept .outgoing { width: fit-content; max-width: 94%; background: var(--app-soft); border-radius: 9px 9px 2px 9px; margin: 0 0 14px auto; padding: 9px 11px; font-size: 12px; }
+    #codex-message-concept .outgoing-meta { color: var(--app-muted); font-size: 10px; text-align: right; margin-top: 5px; }
+    #codex-message-concept .reply-wrap { border-top: 1px solid var(--app-line); padding: 12px 14px 14px; }
+    #codex-message-concept .reply-box { border: 1px solid var(--app-line); border-radius: 11px; padding: 9px 10px 7px; }
+    #codex-message-concept .reply-input { min-height: 49px; max-height: 88px; padding: 0; font-size: 11px; line-height: 1.7; }
+    #codex-message-concept .reply-footer { display: flex; align-items: center; font-size: 10px; color: var(--app-muted); }
+    #codex-message-concept .reply-footer .send { width: 23px; height: 23px; }
+    #codex-message-concept .confirmation { padding: 10px; border: 1px solid var(--app-line); border-radius: 9px; margin-top: 9px; background: var(--app-soft); }
+    #codex-message-concept .confirmation p { font-size: 11px; margin: 5px 0 9px; overflow-wrap: anywhere; }
+    #codex-message-concept .confirm-label { font-size: 10px; color: var(--app-muted); }
+    #codex-message-concept .confirm-actions { display: flex; justify-content: flex-end; gap: 7px; }
+    #codex-message-concept .small-button { font-size: 10px; border: 1px solid var(--app-line); padding: 4px 8px; border-radius: 5px; background: var(--app-surface); }
+    #codex-message-concept .small-button.strong { background: var(--app-strong); color: var(--app-on-strong); }
+    #codex-message-concept .demo-status { min-height: 14px; color: var(--app-muted); font-size: 10px; padding-top: 5px; }
+    #codex-message-concept .sent-quote { padding: 7px 9px; margin-bottom: 6px; border-left: 2px solid var(--app-muted); font-size: 11px; color: var(--app-muted); }
+    @media (max-width: 870px) {
+      #codex-message-concept { --navigation-width: 148px; --message-width: 264px; }
+      #codex-message-concept .chat-header { padding-inline: 15px; }
+      #codex-message-concept .transcript { padding-inline: 17px; }
+      #codex-message-concept .compose-wrap { padding-inline: 14px; }
+    }
+    @media (max-width: 710px) {
+      #codex-message-concept .workspace { grid-template-columns: minmax(0, 1fr) var(--right-width); }
+      #codex-message-concept .navigation { grid-column: 1 / -1; grid-row: 1; border-bottom: 1px solid var(--app-line); }
+      #codex-message-concept .nav-bottom { display: none; }
+      #codex-message-concept .chat { grid-column: 1; grid-row: 2; border-left: 0; }
+      #codex-message-concept .messages { grid-column: 2; grid-row: 2; }
+      #codex-message-concept .chrome-end { display: none; }
+      #codex-message-concept .messages-toggle { margin-left: auto; }
+    }
+    @media (max-width: 530px) {
+      #codex-message-concept .workspace { grid-template-columns: minmax(0, 1fr); }
+      #codex-message-concept .messages { grid-column: 1; grid-row: 3; border-left: 0; border-top: 1px solid var(--app-line); }
+      #codex-message-concept .chat { min-height: 520px; }
+      #codex-message-concept .messages { min-height: 430px; }
+      #codex-message-concept .message-item { margin-bottom: 5px; }
+      #codex-message-concept .chrome-end { display: none; }
+    }
+    @media (pointer: coarse) {
+      #codex-message-concept .icon-button, #codex-message-concept .quote-button, #codex-message-concept .platform { min-height: 40px; }
+      #codex-message-concept textarea { font-size: 16px; }
+    }
+  </style>
+  <div class="app">
+    <div class="chrome">
+      <div class="traffic" aria-hidden="true"><span></span><span></span><span></span></div>
+      <button class="icon-button cursor-interaction" id="cmsg-navigation-toggle" type="button" aria-label="收起左侧项目栏" aria-expanded="true" aria-controls="cmsg-navigation"><i class="icon" data-lucide="panel-left" aria-hidden="true"></i></button>
+      <span class="chrome-title">Codex</span>
+      <span class="chrome-end">codex · 远程工作区</span>
+      <button class="messages-toggle cursor-interaction" id="cmsg-toggle" type="button" aria-expanded="true" aria-controls="cmsg-sidebar"><i class="icon" data-lucide="panel-right" aria-hidden="true"></i>消息<span class="unread">3</span></button>
+    </div>
+    <div class="workspace">
+      <nav class="navigation" id="cmsg-navigation" aria-label="项目与会话">
+        <div class="nav-button"><i class="icon" data-lucide="square-pen" aria-hidden="true"></i>新对话<span class="shortcut">⌘ N</span></div>
+        <div class="nav-label">项目</div>
+        <div class="project"><i class="icon" data-lucide="chevron-down" aria-hidden="true"></i><i class="icon" data-lucide="folder" aria-hidden="true"></i>example-project</div>
+        <div class="session active">修复登录后的状态切换</div>
+        <div class="session inactive">检查消息发送逻辑</div>
+        <div class="session inactive">整理接口文档</div>
+        <div class="project" style="margin-top:12px"><i class="icon" data-lucide="chevron-right" aria-hidden="true"></i><i class="icon" data-lucide="folder" aria-hidden="true"></i>ssh-codex</div>
+        <div class="nav-bottom">
+          <div class="nav-button"><i class="icon" data-lucide="settings-2" aria-hidden="true"></i>设置</div>
+          <div class="account"><i class="icon" data-lucide="server" aria-hidden="true"></i><span>codex<span style="display:block;font-size:10px;color:var(--app-muted)">SSH 已连接</span></span></div>
+        </div>
+      </nav>
+      <main class="chat" aria-label="Codex 对话">
+        <header class="chat-header">
+          <div class="chat-heading"><h2>修复登录后的状态切换</h2><div class="location"><i class="icon" data-lucide="git-branch" aria-hidden="true"></i>example-project / fix-login</div></div>
+        </header>
+        <div class="transcript" id="cmsg-transcript">
+          <div class="user-message">看下登录成功后，为什么偶尔仍停留在登录页。</div>
+          <div class="assistant-message">
+            <p>我会沿着登录回调和会话恢复检查，先定位触发条件。</p>
+            <div class="tool-line"><i class="icon" data-lucide="check" aria-hidden="true"></i>已查看 auth.ts 和 session.ts<i class="icon" data-lucide="chevron-down" aria-hidden="true"></i></div>
+            <p>路由跳转发生在会话状态更新之前。我已调整这两个操作的顺序，并补上回归检查。</p>
+            <div class="file-change"><div class="file-row"><i class="icon" data-lucide="file-code-2" aria-hidden="true"></i>auth.ts<span class="file-stats"><span class="additions">+12</span>　<span class="deletions">−4</span></span><i class="icon" data-lucide="chevron-right" aria-hidden="true"></i></div></div>
+            <div class="chat-actions" aria-hidden="true"><i class="icon" data-lucide="copy"></i><i class="icon" data-lucide="thumbs-up"></i><i class="icon" data-lucide="thumbs-down"></i></div>
+          </div>
+        </div>
+        <div class="compose-wrap">
+          <div class="composer">
+            <div class="source-chip" id="cmsg-source" hidden>
+              <i class="icon" data-lucide="quote" aria-hidden="true"></i><div class="source-copy"><div class="source-label" id="cmsg-source-label"></div><div class="source-excerpt" id="cmsg-source-text"></div></div><button class="icon-button cursor-interaction" id="cmsg-remove" type="button" aria-label="移除引用"><i class="icon" data-lucide="x" aria-hidden="true"></i></button>
+            </div>
+            <textarea class="codex-input" id="cmsg-input" aria-label="发送给 Codex 的要求" placeholder="继续提问，或从右侧引用一条消息…"></textarea>
+            <div class="composer-footer"><i class="icon" data-lucide="plus" aria-hidden="true"></i><span class="model">默认模型<i class="icon" data-lucide="chevron-down" aria-hidden="true"></i></span><button class="send cursor-interaction" id="cmsg-send-codex" type="button" aria-label="发送给 Codex"><i class="icon" data-lucide="arrow-up" aria-hidden="true"></i></button></div>
+          </div>
+        </div>
+      </main>
+      <aside class="messages" id="cmsg-sidebar" aria-label="WhatsApp 和 Telegram 消息侧栏">
+        <div class="platforms" role="tablist" aria-label="消息平台">
+          <button class="platform cursor-interaction" id="cmsg-tab-wa" data-platform="wa" type="button" role="tab" aria-selected="true" aria-controls="cmsg-feed"><i class="icon" data-lucide="message-circle" aria-hidden="true"></i>WhatsApp<span class="unread">2</span></button>
+          <button class="platform cursor-interaction" id="cmsg-tab-tg" data-platform="tg" type="button" role="tab" aria-selected="false" aria-controls="cmsg-feed"><i class="icon" data-lucide="send" aria-hidden="true"></i>Telegram<span class="unread">1</span></button>
+        </div>
+        <div class="conversation-switcher" id="cmsg-switcher">
+          <button class="conversation-heading cursor-interaction" id="cmsg-picker-toggle" type="button" aria-label="切换联系人或群聊" aria-haspopup="dialog" aria-expanded="false" aria-controls="cmsg-conversation-picker"><span class="contact-avatar" id="cmsg-avatar">产</span><span class="contact-copy"><span class="conversation-name" id="cmsg-contact">产品协作群</span><span class="conversation-meta" id="cmsg-contact-meta" style="display:block">WhatsApp · 8 位成员</span></span><i class="icon" data-lucide="chevrons-up-down" aria-hidden="true"></i></button>
+          <div class="conversation-picker" id="cmsg-conversation-picker" role="dialog" aria-label="选择联系人或群聊" hidden><div class="picker-title">切换对话</div><div id="cmsg-conversation-options"></div></div>
+        </div>
+        <div class="conversation-feed" id="cmsg-feed" role="tabpanel" aria-labelledby="cmsg-tab-wa"><div class="day-divider">今天</div><div id="cmsg-items"></div></div>
+        <div class="reply-wrap">
+          <div class="reply-box"><textarea class="reply-input" id="cmsg-reply" aria-label="回复当前联系人" placeholder="回复产品协作群…"></textarea><div class="reply-footer"><span id="cmsg-reply-label">发送至 WhatsApp</span><button class="send cursor-interaction" id="cmsg-reply-preview" type="button" aria-label="预览回复"><i class="icon" data-lucide="arrow-up" aria-hidden="true"></i></button></div></div>
+          <div class="confirmation" id="cmsg-confirm" hidden><div class="confirm-label" id="cmsg-confirm-label"></div><p id="cmsg-confirm-text"></p><div class="confirm-actions"><button class="small-button cursor-interaction" id="cmsg-reply-cancel" type="button">取消</button><button class="small-button strong cursor-interaction" id="cmsg-reply-send" type="button">确认发送</button></div></div>
+          <div class="demo-status" id="cmsg-message-status" role="status"></div>
+        </div>
+      </aside>
+    </div>
+  </div>
+  <script>
+    (() => {
+      const root = document.getElementById('codex-message-concept');
+      const q = selector => root.querySelector(selector);
+      const platforms = {
+        wa: { name: 'WhatsApp', conversations: [
+          { id: 'wa-work', name: '产品协作群', type: 'group', avatar: '产', meta: '群聊 · 8 位成员', unread: 2, preview: '阿周：是不是状态更新得太晚？', messages: [
+            { id: 'wa-1', author: '小林', time: '10:42', text: '刚刚复现了：登录成功后页面没跳转，但刷新就正常。' },
+            { id: 'wa-2', author: '阿周', time: '10:43', text: '是不是会话状态更新得太晚？' },
+            { id: 'wa-3', mine: true, time: '10:44', text: '我查一下登录回调。' }
+          ] },
+          { id: 'wa-design', name: '设计讨论组', type: 'group', avatar: '设', meta: '群聊 · 5 位成员', preview: '阿文：右侧消息栏可以再窄一点', messages: [
+            { id: 'wa-design-1', author: '阿文', time: '10:21', text: '右侧消息栏可以再窄一点，给中间的代码和对话多留些空间。' },
+            { id: 'wa-design-2', author: '小陈', time: '10:23', text: '切换群聊时，记得保留已经写好的回复。' }
+          ] },
+          { id: 'wa-lin', name: '小林', type: 'contact', avatar: '林', meta: '联系人 · WhatsApp', preview: '报错截图晚点发你', messages: [
+            { id: 'wa-lin-1', author: '小林', time: '09:56', text: '报错截图晚点发你，先看一下我在群里的复现步骤。' },
+            { id: 'wa-lin-2', mine: true, time: '09:58', text: '好的，我先按步骤检查。' }
+          ] },
+          { id: 'wa-zhou', name: '阿周', type: 'contact', avatar: '周', meta: '联系人 · WhatsApp', preview: '验证环境已经准备好了', messages: [
+            { id: 'wa-zhou-1', author: '阿周', time: '09:40', text: '验证环境已经准备好了，修复后叫我一起看。' }
+          ] }
+        ] },
+        tg: { name: 'Telegram', conversations: [
+          { id: 'tg-alex', name: 'Alex', type: 'contact', avatar: 'A', meta: '联系人 · Telegram', unread: 1, preview: '先别发布，等验证完成', messages: [
+            { id: 'tg-1', author: 'Alex', time: '10:38', text: '修复完成后把改动说明发我，我来回归。' },
+            { id: 'tg-2', author: 'Alex', time: '10:39', text: '先别发布，等验证完成。' }
+          ] },
+          { id: 'tg-dev', name: '开发讨论', type: 'group', avatar: '开', meta: '群聊 · 12 位成员', preview: 'Mia：接口文档已经更新', messages: [
+            { id: 'tg-dev-1', author: 'Mia', time: '10:12', text: '接口文档已经更新，新增了发送状态查询的说明。' },
+            { id: 'tg-dev-2', author: 'Alex', time: '10:15', text: '客户端断线重连后，需要再补读一次消息。' }
+          ] },
+          { id: 'tg-mia', name: 'Mia', type: 'contact', avatar: 'M', meta: '联系人 · Telegram', preview: '有空时看一下接口说明', messages: [
+            { id: 'tg-mia-1', author: 'Mia', time: '09:30', text: '有空时看一下接口说明，确认客户端需要哪些字段。' }
+          ] }
+        ] }
+      };
+      let active = 'wa';
+      const selected = { wa: 'wa-work', tg: 'tg-alex' };
+      let quoted = { ...platforms.wa.conversations[0].messages[1], platform: 'WhatsApp', contact: '产品协作群' };
+      let pendingReply = null;
+      const savedDrafts = {};
+      function currentConversation() { return platforms[active].conversations.find(conversation => conversation.id === selected[active]) || platforms[active].conversations[0]; }
+      function draftKey() { return active + ':' + currentConversation().id; }
+      function saveDraft() { savedDrafts[draftKey()] = q('#cmsg-reply').value; }
+      function remember() {
+        if (window.openai && window.openai.setWidgetState) window.openai.setWidgetState({ modelContent: { concept: 'Codex 主界面与可收起的左右侧栏', sidebarOpen: !q('#cmsg-sidebar').hidden, navigationOpen: !q('#cmsg-navigation').hidden, platform: platforms[active].name, conversation: currentConversation().name, quoteMode: '单条消息引用到输入框' }, privateContent: { active, selected: { ...selected }, sidebarOpen: !q('#cmsg-sidebar').hidden, navigationOpen: !q('#cmsg-navigation').hidden } }).catch(() => {});
+      }
+      function setOpen(open, persist = true) {
+        root.classList.toggle('is-collapsed', !open);
+        q('#cmsg-sidebar').hidden = !open;
+        q('#cmsg-toggle').setAttribute('aria-expanded', String(open));
+        if (!open) setPicker(false);
+        if (persist) remember();
+      }
+      function setNavigationOpen(open, persist = true) {
+        root.classList.toggle('is-nav-collapsed', !open);
+        q('#cmsg-navigation').hidden = !open;
+        q('#cmsg-navigation-toggle').setAttribute('aria-expanded', String(open));
+        q('#cmsg-navigation-toggle').setAttribute('aria-label', open ? '收起左侧项目栏' : '展开左侧项目栏');
+        if (persist) remember();
+      }
+      function setPicker(open, focus = false) {
+        q('#cmsg-conversation-picker').hidden = !open;
+        q('#cmsg-picker-toggle').setAttribute('aria-expanded', String(open));
+        if (open) { renderPicker(); if (focus) q('#cmsg-conversation-options button').focus({ preventScroll: true }); }
+      }
+      function makeIcon(name) {
+        const icon = document.createElement('i'); icon.className = 'icon'; icon.dataset.lucide = name; icon.setAttribute('aria-hidden', 'true'); return icon;
+      }
+      function showQuote(message, platform, conversation, focus = true) {
+        quoted = { ...message, author: message.author || '你', platform: platform.name, contact: conversation.name };
+        q('#cmsg-source').hidden = false;
+        q('#cmsg-source-label').textContent = [quoted.platform, quoted.contact, quoted.author !== quoted.contact ? quoted.author : '', quoted.time].filter(Boolean).join(' · ');
+        q('#cmsg-source-text').textContent = quoted.text;
+        q('#cmsg-input').placeholder = '针对这条消息，你想让 Codex 做什么？';
+        root.querySelectorAll('[data-message-id]').forEach(el => el.classList.toggle('is-quoted', el.dataset.messageId === message.id));
+        if (focus) { q('#cmsg-input').focus({ preventScroll: true }); remember(); }
+      }
+      function renderPicker() {
+        const list = q('#cmsg-conversation-options'); list.replaceChildren();
+        const p = platforms[active];
+        ['group', 'contact'].forEach(type => {
+          const label = document.createElement('div'); label.className = 'picker-section'; label.textContent = type === 'group' ? '群聊' : '联系人'; list.append(label);
+          p.conversations.filter(conversation => conversation.type === type).forEach(conversation => {
+            const button = document.createElement('button'); button.type = 'button'; button.className = 'conversation-option cursor-interaction'; button.dataset.conversationId = conversation.id; button.setAttribute('aria-pressed', String(conversation.id === selected[active])); button.setAttribute('aria-label', '切换到' + conversation.name);
+            const avatar = document.createElement('span'); avatar.className = 'option-avatar'; avatar.append(makeIcon(type === 'group' ? 'users' : 'user-round'));
+            const copy = document.createElement('span'); copy.className = 'option-copy';
+            const name = document.createElement('div'); name.className = 'option-name'; name.textContent = conversation.name;
+            const preview = document.createElement('div'); preview.className = 'option-preview'; preview.textContent = conversation.preview;
+            copy.append(name, preview); button.append(avatar, copy);
+            if (conversation.id === selected[active]) button.append(makeIcon('check'));
+            else if (conversation.unread) { const unread = document.createElement('span'); unread.className = 'unread'; unread.textContent = conversation.unread; button.append(unread); }
+            button.addEventListener('click', () => { saveDraft(); selected[active] = conversation.id; pendingReply = null; q('#cmsg-confirm').hidden = true; q('#cmsg-message-status').textContent = ''; setPicker(false); renderMessages(); q('#cmsg-picker-toggle').focus({ preventScroll: true }); remember(); });
+            list.append(button);
+          });
+        });
+        if (globalThis.lucide) lucide.createIcons({ attrs: { width: 16, height: 16 } });
+      }
+      function renderMessages() {
+        const p = platforms[active];
+        const conversation = currentConversation();
+        q('#cmsg-contact').textContent = conversation.name;
+        q('#cmsg-avatar').textContent = conversation.avatar;
+        q('#cmsg-contact-meta').textContent = conversation.meta;
+        q('#cmsg-reply').placeholder = '回复' + conversation.name + '…';
+        q('#cmsg-reply').value = savedDrafts[draftKey()] || '';
+        q('#cmsg-reply').setAttribute('aria-label', '回复' + conversation.name);
+        q('#cmsg-reply-label').textContent = '发送至 ' + p.name;
+        q('#cmsg-feed').setAttribute('aria-labelledby', 'cmsg-tab-' + active);
+        root.querySelectorAll('[data-platform]').forEach(el => el.setAttribute('aria-selected', String(el.dataset.platform === active)));
+        const items = q('#cmsg-items'); items.replaceChildren();
+        conversation.messages.forEach(message => {
+          if (message.mine) {
+            const outgoing = document.createElement('div'); outgoing.className = 'outgoing'; outgoing.dataset.messageId = message.id;
+            const text = document.createElement('div'); text.textContent = message.text;
+            const meta = document.createElement('div'); meta.className = 'outgoing-meta'; meta.textContent = message.time + ' · ' + (message.demo ? '示意发送' : '已发送');
+            const quote = document.createElement('button'); quote.type = 'button'; quote.className = 'quote-button cursor-interaction'; quote.dataset.quoteId = message.id; quote.setAttribute('aria-label', '引用我的这条消息到 Codex'); quote.append(makeIcon('corner-up-left'), document.createTextNode('引用到 Codex')); quote.addEventListener('click', () => showQuote(message, p, conversation));
+            const bottom = document.createElement('div'); bottom.className = 'message-bottom'; bottom.append(quote);
+            outgoing.append(text, meta, bottom); items.append(outgoing); return;
+          }
+          const item = document.createElement('article'); item.className = 'message-item'; item.dataset.messageId = message.id;
+          if (quoted && quoted.id === message.id) item.classList.add('is-quoted');
+          const author = document.createElement('div'); author.className = 'message-author'; author.textContent = message.author;
+          const time = document.createElement('time'); time.textContent = message.time; author.append(time);
+          const text = document.createElement('div'); text.className = 'message-text'; text.textContent = message.text;
+          const bottom = document.createElement('div'); bottom.className = 'message-bottom';
+          const quote = document.createElement('button'); quote.type = 'button'; quote.className = 'quote-button cursor-interaction'; quote.dataset.quoteId = message.id; quote.setAttribute('aria-label', '引用' + message.author + '的这条消息到 Codex'); quote.append(makeIcon('corner-up-left'), document.createTextNode('引用到 Codex'));
+          quote.addEventListener('click', () => showQuote(message, p, conversation));
+          bottom.append(quote); item.append(author, text, bottom); items.append(item);
+        });
+        if (globalThis.lucide) lucide.createIcons({ attrs: { width: 16, height: 16 } });
+      }
+      q('#cmsg-toggle').addEventListener('click', () => setOpen(q('#cmsg-sidebar').hidden));
+      q('#cmsg-navigation-toggle').addEventListener('click', () => setNavigationOpen(q('#cmsg-navigation').hidden));
+      q('#cmsg-picker-toggle').addEventListener('click', () => setPicker(q('#cmsg-conversation-picker').hidden));
+      root.addEventListener('pointerdown', event => { if (!q('#cmsg-switcher').contains(event.target)) setPicker(false); });
+      root.addEventListener('keydown', event => { if (event.key === 'Escape' && !q('#cmsg-conversation-picker').hidden) { setPicker(false); q('#cmsg-picker-toggle').focus({ preventScroll: true }); } });
+      q('#cmsg-picker-toggle').addEventListener('keydown', event => { if (event.key === 'ArrowDown') { event.preventDefault(); setPicker(true, true); } });
+      root.querySelectorAll('[data-platform]').forEach(button => button.addEventListener('click', () => {
+        saveDraft(); setPicker(false);
+        active = button.dataset.platform;
+        pendingReply = null; q('#cmsg-confirm').hidden = true; q('#cmsg-message-status').textContent = '';
+        renderMessages(); remember();
+      }));
+      q('#cmsg-remove').addEventListener('click', () => {
+        quoted = null; q('#cmsg-source').hidden = true; q('#cmsg-input').placeholder = '继续提问，或从右侧引用一条消息…';
+        root.querySelectorAll('[data-message-id]').forEach(el => el.classList.remove('is-quoted')); remember();
+      });
+      q('#cmsg-send-codex').addEventListener('click', () => {
+        const text = q('#cmsg-input').value.trim();
+        if (!text && !quoted) { q('#cmsg-input').focus(); return; }
+        const message = document.createElement('div'); message.className = 'user-message';
+        if (quoted) { const quote = document.createElement('div'); quote.className = 'sent-quote'; quote.textContent = quoted.platform + ' · ' + quoted.contact + ' · ' + quoted.author + '：' + quoted.text; message.append(quote); }
+        if (text) { const copy = document.createElement('div'); copy.textContent = text; message.append(copy); }
+        q('#cmsg-transcript').append(message); q('#cmsg-input').value = ''; q('#cmsg-remove').click();
+      });
+      q('#cmsg-reply-preview').addEventListener('click', () => {
+        const text = q('#cmsg-reply').value.trim();
+        if (!text) { q('#cmsg-reply').focus(); return; }
+        pendingReply = { platform: active, conversationId: currentConversation().id, text };
+        q('#cmsg-confirm-label').textContent = '发送给 ' + currentConversation().name + '？';
+        q('#cmsg-confirm-text').textContent = text; q('#cmsg-confirm').hidden = false;
+      });
+      q('#cmsg-reply-cancel').addEventListener('click', () => { pendingReply = null; q('#cmsg-confirm').hidden = true; });
+      q('#cmsg-reply-send').addEventListener('click', () => {
+        if (!pendingReply || pendingReply.platform !== active || pendingReply.conversationId !== currentConversation().id) return;
+        currentConversation().messages.push({ id: 'demo-' + Date.now(), mine: true, demo: true, time: '刚刚', text: pendingReply.text });
+        savedDrafts[draftKey()] = ''; pendingReply = null; q('#cmsg-confirm').hidden = true; renderMessages(); q('#cmsg-message-status').textContent = '仅演示发送流程';
+      });
+      function restore(state) {
+        if (!state || !state.privateContent) return;
+        const saved = state.privateContent;
+        if (saved.selected) ['wa', 'tg'].forEach(platform => { if (platforms[platform].conversations.some(conversation => conversation.id === saved.selected[platform])) selected[platform] = saved.selected[platform]; });
+        if (saved.active === 'wa' || saved.active === 'tg') active = saved.active;
+        if (typeof saved.sidebarOpen === 'boolean') setOpen(saved.sidebarOpen, false);
+        if (typeof saved.navigationOpen === 'boolean') setNavigationOpen(saved.navigationOpen, false);
+      }
+      restore(window.openai && window.openai.widgetState);
+      renderMessages();
+      if (quoted) { showQuote(quoted, platforms.wa, platforms.wa.conversations[0], false); q('#cmsg-input').value = '结合这条回复，检查登录状态更新和路由跳转的先后顺序。'; }
+      window.addEventListener('openai:set_globals', event => { const state = event.detail && event.detail.globals && event.detail.globals.widgetState; if (state) { restore(state); renderMessages(); } });
+      if (globalThis.Tweak) {
+        const design = { messageWidth: 302 };
+        const tweak = new Tweak({ container: root, onChange: () => root.style.setProperty('--message-width', design.messageWidth + 'px') });
+        tweak.addSlider(design, 'messageWidth', { label: '消息侧栏宽度', min: 270, max: 350, step: 2, unit: 'px' });
+      }
+    })();
+  </script>
+</div>
