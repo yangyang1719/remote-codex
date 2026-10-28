@@ -65,7 +65,7 @@ window.RemoteCodexRunState = ({ root, q, make, state, key, session }) => {
     }
     activity.hidden = !state.active || (!row.stage && row.turn?.status !== 'inProgress');
     label.textContent = !state.connected ? '连接已断开，进度待同步' : ({ thinking: '思考中…', command: '正在执行命令…', tool: '正在使用工具…', responding: '正在回复…', waiting: '等待你的处理…', retrying: '正在重试…' }[row.stage] || '运行中…');
-    const hasSummary = (state.items[state.active] || []).some(item => item.type === 'reasoning' && item.summary?.some(text => text.trim()));
+    const hasSummary = (state.items[state.active] || []).some(item => item.type === 'reasoning' && Array.isArray(item.summary) && item.summary.some(text => typeof text === 'string' && text.trim()));
     activity.classList.toggle('is-active', state.connected && !activity.hidden); preview.textContent = hasSummary ? '' : row.preview || ''; preview.title = preview.textContent;
     if (picker.open && pickerKey !== scopeKey(key())) picker.close();
   }

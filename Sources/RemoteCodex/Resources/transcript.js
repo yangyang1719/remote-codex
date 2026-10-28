@@ -135,9 +135,12 @@ window.RemoteCodexTranscript = ({ make, icon, inline, pagedText, request, connec
     node.ontoggle = () => { if (node.open) { if (box.parentNode !== node) node.append(box); output(view); } };
     updateCommand(node, item); return node;
   }
+  function hasReasoningSummary(item) {
+    return Array.isArray(item.summary) && item.summary.some(text => typeof text === 'string' && text.trim());
+  }
   function updateReasoning(node, item) {
     const view = reasoningViews.get(node); if (!view) return reasoning(item);
-    const text = (item.summary || []).join('\n\n'); node.dataset.status = item.status || 'completed';
+    const text = (Array.isArray(item.summary) ? item.summary : []).filter(text => typeof text === 'string' && text.trim()).join('\n\n'); node.dataset.status = item.status || 'completed'; node.hidden = !hasReasoningSummary(item);
     view.label.textContent = item.status === 'inProgress' ? '思考中' : '思考摘要'; view.preview.textContent = text.replace(/\s+/g, ' '); view.preview.title = view.preview.textContent;
     if (view.text !== text) { view.text = text; if (node.open) { view.body.replaceChildren(); pagedText(view.body, text); } }
     return node;
@@ -150,5 +153,5 @@ window.RemoteCodexTranscript = ({ make, icon, inline, pagedText, request, connec
     return updateReasoning(node, item);
   }
   setInterval(() => { for (const node of running) { if (!node.isConnected) { running.delete(node); continue; } const view = views.get(node); label(view); if (!['inProgress', 'pending', 'running'].includes(view.item.status)) running.delete(node); } }, 1000);
-  return { markdown, command, updateCommand, reasoning, updateReasoning };
+  return { markdown, command, updateCommand, reasoning, updateReasoning, hasReasoningSummary };
 };

@@ -203,7 +203,7 @@
     return node;
   }
   function renderItem(item) {
-    if (item.type === 'reasoning') return (item.summary || []).some(text => text.trim()) || item.status === 'inProgress' ? transcript.reasoning(item) : null;
+    if (item.type === 'reasoning') return transcript.hasReasoningSummary(item) ? transcript.reasoning(item) : null;
     if (item.type === 'userMessage') {
       const node = make('div', 'user-message'); let text = itemText(item), files = [];
       const answered = asyncQuestions?.history(text); if (answered) { node.append(answered); return node; }
@@ -261,7 +261,7 @@
     transcriptFrame = null;
     const node = q('#cmsg-transcript'), id = state.active, generation = renderGeneration;
     if (renderedThread !== id) { itemNodes.clear(); renderedThread = id; scrollToLatest = true; }
-    const items = (state.items[id] || []).filter(item => ['userMessage', 'agentMessage', 'reasoning', 'plan', 'fileChange', 'commandExecution', 'mcpToolCall', 'imageView', 'collabAgentToolCall', 'subAgentActivity'].includes(item.type));
+    const items = (state.items[id] || []).filter(item => ['userMessage', 'agentMessage', 'reasoning', 'plan', 'fileChange', 'commandExecution', 'mcpToolCall', 'imageView', 'collabAgentToolCall', 'subAgentActivity'].includes(item.type) && (item.type !== 'reasoning' || transcript.hasReasoningSummary(item)));
     const start = Math.max(0, items.length - (state.visibleCounts[id] || 80)), visible = items.slice(start), rows = [];
     if (!id) { const empty = make('div', 'empty-state'); empty.append(make('h3', '', '从这里开始'), make('div', '', state.workspaceEmpty ? '从左侧添加远端项目后开始使用。' : state.connected ? '选择左侧的远端会话，或发送消息开始新的对话。' : '正在连接远端 Codex…')); rows.push(empty); }
     else if (start || state.cursors[id]) {

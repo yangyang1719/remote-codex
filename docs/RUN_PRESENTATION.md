@@ -18,4 +18,6 @@
 
 接收 `reasoning.summary` 和 `item/reasoning/summaryTextDelta` / summaryPartAdded。摘要默认收起，浅灰单行预览，点开查看完整可见摘要；流式更新保留手动展开。底部不重复显示聊天中已有的摘要。未提供摘要时只显示状态，不编造摘要文本。
 
+空数组、缺少摘要或只有空白的 reasoning 条目不生成聊天行，也不占历史分页数量。流式正文到达后才显示摘要；更新为空时移除原摘要节点，避免缓存留下空标题。没有摘要内容时仍可显示底部运行状态。
+
 **不转发** `reasoning.content`、encryptedContent 或 `item/reasoning/textDelta`。turn 通知/快照不携带原始 items，历史条目只白名单传递 summary。子代理内联面板沿用其既有过滤，不新增原始推理读取。
