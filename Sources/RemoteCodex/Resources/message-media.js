@@ -1,7 +1,7 @@
 'use strict';
-window.RemoteCodexMessageMedia = ({ state, root, q, make, icon, request, post, current, key, drafts, quoteMessage, renderAttachments, renderControls, renderConversation, cancelReply }) => {
+window.RemoteCodexMessageMedia = ({ state, root, q, make, icon, request, post, current, key, drafts, quoteMessage, quotedMessage, quoteCount, renderAttachments, renderControls, renderConversation, cancelReply }) => {
   state.replyAttachments ||= {};
-  const cards = new Map(); let queue = Promise.resolve();
+  const cards = new Map(), quoting = new Set(); let queue = Promise.resolve();
   const note = text => { q('#cmsg-message-status').textContent = text || ''; };
   const context = (message, conversation) => ({ mediaId: message.media.id, conversationId: conversation.id });
   const size = n => n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.ceil((n || 0) / 1024) + ' KB';
@@ -35,15 +35,24 @@ window.RemoteCodexMessageMedia = ({ state, root, q, make, icon, request, post, c
   }
   async function quote(message, conversation) {
     const draft = key(), scope = state.draftScope;
+    const identity = JSON.stringify([scope, draft, conversation.platform, conversation.id, message.id]);
+    if (quotedMessage(message, conversation)) { note('已引用这条消息。'); return; }
+    if (quoting.has(identity)) return;
+    if (quoteCount() >= window.RemoteCodexMessageQuotes.limit) { note(`每次最多引用 ${window.RemoteCodexMessageQuotes.limit} 条消息。`); return; }
     if (!message.media) { quoteMessage(message, conversation); return; }
+    if (state.sendPending || state.commandPending) { note('当前操作完成后可继续引用附件。'); return; }
     if ((state.attachments[draft] || []).length >= 10) { note('每条 Codex 消息最多 10 个附件。'); return; }
     note('正在准备引用的附件…');
+    const preparation = JSON.stringify([scope, draft]);
+    quoting.add(identity); (state.quotePreparing ||= {})[preparation] = (state.quotePreparing[preparation] || 0) + 1; renderControls();
     try {
       const result = await request('messageMediaQuote', { ...context(message, conversation), draftKey: draft, draftScope: scope });
       if (key() !== draft || state.draftScope !== scope) { post('attachmentRemove', { id: result.attachment.id }); throw new Error('Codex 会话已切换，请重新引用。'); }
-      (state.attachments[draft] ||= []).push(result.attachment); quoteMessage(message, conversation); drafts().codex(draft);
+      if ((state.attachments[draft] || []).length >= 10 || !quoteMessage({ ...message, attachmentId: result.attachment.id }, conversation)) { post('attachmentRemove', { id: result.attachment.id }); return; }
+      (state.attachments[draft] ||= []).push(result.attachment); drafts().codex(draft);
       renderAttachments(); renderControls(); note('附件已加入 Codex 草稿，点击发送后才交给 Codex。');
     } catch (error) { note(error.message); }
+    finally { quoting.delete(identity); state.quotePreparing[preparation] = Math.max(0, (state.quotePreparing[preparation] || 1) - 1); renderControls(); }
   }
   const fileInput = make('input'); fileInput.type = 'file'; fileInput.id = 'message-file-input'; fileInput.hidden = true; root.append(fileInput);
   const add = make('button', 'message-add cursor-interaction'); add.type = 'button'; add.id = 'message-attachment-add'; add.title = '添加图片、文件、视频或音频'; add.append(icon('plus'));

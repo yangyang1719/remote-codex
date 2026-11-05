@@ -168,6 +168,13 @@ enum ClientError: LocalizedError {
             try send(["method": "initialized", "params": [:]])
         } catch { if generation == current { close() }; throw error }
     }
+    func localMCPConfiguration(_ method: String, params: [String: Any], thread: String) async throws -> [String: Any] {
+        guard ["config/read", "config/value/write", "config/mcpServer/reload"].contains(method) else { throw ClientError.message("不支持的本地 MCP 配置请求。") }
+        if sharedThreadIDs.contains(thread), let sharedConnection {
+            return try await sharedConnection.localMCPConfiguration(method, params: params, thread: thread)
+        }
+        return try await request(method, params: params)
+    }
     func request(_ method: String, params: [String: Any] = [:]) async throws -> [String: Any] {
         let route = ["threadId", "ancestorThreadId", "parentThreadId"].compactMap { params[$0] as? String }.first(where: sharedThreadIDs.contains)
         if route != nil, let sharedConnection {

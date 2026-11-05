@@ -15,7 +15,8 @@ window.RemoteCodexDrafts = ({ state, request, restored, failed }) => {
   function codex(key, scope = state.draftScope) {
     const source = scope === state.draftScope ? state : contexts.get(scope);
     if (!source) return;
-    remember('codex', key, { text: source.drafts[key] || '', quote: source.quotes[key] || null,
+    const quotes = source.quotes[key] = window.RemoteCodexMessageQuotes.rows(source.quotes[key]);
+    remember('codex', key, { text: source.drafts[key] || '', quotes,
       attachmentIds: (source.attachments[key] || []).filter(f => ['ready', 'uploading', 'uploaded'].includes(f.status) && !f.cancelled).map(f => f.id), mode: source.draftModes?.[key] || 'default' }, scope);
   }
   function reply(key, scope = state.draftScope) { const source = scope === state.draftScope ? state : contexts.get(scope); if (key && source) remember('reply', key, { text: source.replyDrafts[key] || '', attachmentIds: (source.replyAttachments?.[key] || []).filter(f => f.status === 'ready' && !f.cancelled).map(f => f.id) }, scope); }
@@ -53,8 +54,8 @@ window.RemoteCodexDrafts = ({ state, request, restored, failed }) => {
         const separator = record.indexOf(':'), kind = record.slice(0, separator), key = record.slice(separator + 1);
         if (desired.has(address(scope, kind, key))) continue;
         if (kind === 'codex') {
-          state.drafts[key] = value.text || ''; (state.draftModes ||= {})[key] = value.mode || 'default'; if (value.quote) state.quotes[key] = value.quote; state.attachments[key] = value.attachments || [];
-          saved.set(address(scope, kind, key), JSON.stringify({ text: state.drafts[key], quote: state.quotes[key] || null, attachmentIds: state.attachments[key].filter(f => f.status === 'ready').map(f => f.id), mode: state.draftModes[key] }));
+          state.drafts[key] = value.text || ''; (state.draftModes ||= {})[key] = value.mode || 'default'; state.quotes[key] = window.RemoteCodexMessageQuotes.rows(value.quotes ?? value.quote); state.attachments[key] = value.attachments || [];
+          saved.set(address(scope, kind, key), JSON.stringify({ text: state.drafts[key], quotes: state.quotes[key], attachmentIds: state.attachments[key].filter(f => f.status === 'ready').map(f => f.id), mode: state.draftModes[key] }));
         }
         if (kind === 'reply') { state.replyDrafts[key] = value.text || ''; (state.replyAttachments ||= {})[key] = value.attachments || []; saved.set(address(scope, kind, key), JSON.stringify({ text: state.replyDrafts[key], attachmentIds: state.replyAttachments[key].filter(f => f.status === 'ready').map(f => f.id) })); }
         if (kind === 'preferences') { state.platform = value.platform || 'whatsapp'; state.selected = value.selected || {}; saved.set(address(scope, kind, key), JSON.stringify({ platform: state.platform, selected: state.selected })); }

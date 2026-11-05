@@ -147,6 +147,16 @@ html,body{margin:0;padding:0;background:transparent}
 #codex-message-concept .approval-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:10px}
 #codex-message-concept button:disabled{opacity:.45}
 #codex-message-concept .source-label{overflow-wrap:anywhere}
+#codex-message-concept .quote-collection{max-width:100%;min-width:0}
+#codex-message-concept .quote-collection>.source-copy{overflow:hidden}
+#codex-message-concept .quote-collection>.source-copy>.source-label{margin-bottom:5px}
+#codex-message-concept .quote-list{max-height:180px;overflow-y:auto;overscroll-behavior:contain;white-space:normal}
+#codex-message-concept .quote-row{display:flex;align-items:flex-start;gap:7px;padding:7px 0;min-width:0}
+#codex-message-concept .quote-row+.quote-row{border-top:1px solid var(--app-line)}
+#codex-message-concept .quote-copy{flex:1;min-width:0}
+#codex-message-concept .quote-label{font-size:10px;color:var(--app-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:3px}
+#codex-message-concept .quote-text{font-size:11px;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+#codex-message-concept .quote-remove{flex:0 0 auto;color:var(--app-muted)}
 #codex-message-concept .demo-label{font-size:10px;color:var(--app-muted);margin-left:8px}
 #codex-message-concept .attachment-action{position:relative;display:flex;align-items:center}
 #codex-message-concept .attachment-menu{position:absolute;bottom:36px;left:0;z-index:9;min-width:160px;padding:5px;background:var(--app-surface);border:1px solid var(--app-line);border-radius:10px;box-shadow:0 6px 24px #0002}
@@ -357,6 +367,15 @@ html,body{margin:0;padding:0;background:transparent}
 #codex-message-concept .viewed-image-thumb{width:112px;height:112px;flex:0 0 112px;padding:3px;overflow:hidden;border-radius:12px;border:1px solid var(--app-line);background:var(--app-soft);color:var(--app-muted);cursor:zoom-in;display:flex;align-items:center;justify-content:center;white-space:pre-wrap;font:inherit;font-size:10px}
 #codex-message-concept .viewed-image-thumb img{display:block;max-width:100%;max-height:100%;object-fit:contain;border-radius:8px}
 #codex-message-concept .viewed-image-status{font-size:10px;line-height:1.6;overflow-wrap:anywhere;max-width:360px}
+#codex-message-concept .local-mcp-dialog{width:min(720px,90vw);max-height:82vh;overflow:auto}
+#codex-message-concept .local-mcp-dialog p{font-size:12px;line-height:1.7;color:var(--app-muted);overflow-wrap:anywhere}
+#codex-message-concept .local-mcp-dialog section[hidden]{display:none}
+#codex-message-concept #local-mcp-config{width:100%;min-height:170px;max-height:300px;box-sizing:border-box;background:var(--app-soft);color:var(--app-text);border:1px solid var(--app-line);border-radius:8px;padding:10px;font:12px/1.6 ui-monospace,monospace}
+#codex-message-concept .local-mcp-server{display:flex;align-items:center;gap:9px;flex-wrap:wrap;border-bottom:1px solid var(--app-line);padding:12px 0;font-size:12px}
+#codex-message-concept .local-mcp-server strong{flex:1;overflow-wrap:anywhere}
+#codex-message-concept .local-mcp-server span{color:var(--app-muted)}
+#codex-message-concept .local-mcp-tools{max-height:230px;overflow:auto;white-space:pre-wrap;font:11px/1.6 ui-monospace,monospace;background:var(--app-soft);padding:10px;border-radius:8px}
+#codex-message-concept .local-mcp-dialog .workspace-dialog-actions{flex-wrap:wrap}
 </style>
 '''
 def scaled_fonts(value):
@@ -366,6 +385,6 @@ def scaled_fonts(value):
 source, css = scaled_fonts(source), scaled_fonts(css)
 head = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src \'none\'; script-src \'self\'; style-src \'self\' \'unsafe-inline\'; img-src \'self\' data: remote-codex-media:; media-src remote-codex-media:; connect-src \'none\'; object-src \'none\'; frame-src \'none\'; base-uri \'none\'"></head><body>'
 destination = root / 'Sources/RemoteCodex/Resources/index.html'
-scripts = ['transcript', 'subagents', 'session', 'usage', 'commands', 'drafts', 'projects', 'message-media', 'whatsapp-link', 'message-format', 'split-layout', 'appearance', 'inbox', 'async-questions', 'viewed-images', 'remote-account', 'run-state', 'app']
+scripts = ['transcript', 'subagents', 'session', 'usage', 'commands', 'message-quotes', 'drafts', 'projects', 'message-media', 'whatsapp-link', 'message-format', 'split-layout', 'appearance', 'inbox', 'async-questions', 'viewed-images', 'remote-account', 'run-state', 'local-mcp', 'app']
 destination.write_text(head + source + css + ''.join(f'<script src="{name}.js"></script>' for name in scripts) + '</body></html>')
 print(destination)

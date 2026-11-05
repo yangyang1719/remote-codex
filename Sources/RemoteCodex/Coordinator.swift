@@ -125,6 +125,11 @@ import Quartz
     private let rememberSelection: Bool
     private var selectionKey: String { "remote-last-thread:" + settings.host + ":" + settings.project }
     private let gateway: MessageGateway
+    private lazy var localMCP: LocalMCP = {
+        let value = LocalMCP()
+        value.changed = { [weak self] snapshot in self?.emit("localMCPSnapshot", snapshot) }
+        return value
+    }()
     private lazy var messageRouting = DesktopMessageRouting { [weak self] path, body in
         guard let self else { throw CancellationError() }
         return try await self.gateway.request(path, method: "POST", body: body, timeout: 7)
@@ -196,10 +201,12 @@ import Quartz
     }
     func configureProject(_ value: ConnectionSettings) throws {
         guard !projectActionInFlight, !sendInFlight, sendingMessages.isEmpty, !commandInFlight else { throw ClientError.message("请等待当前操作完成后再修改连接。") }
+        if settings.host != value.host { localMCP.close() }
         workspace = try workspaceCatalog.configure(value); settings = value; if rememberSelection { settings.save() }; publishWorkspace()
     }
     private func switchProject(_ id: String, requestedThread: String? = nil) async throws {
         guard let target = workspace?.projects.first(where: { $0.id == id }) else { throw ClientError.message("项目已不在列表中。") }
+        if settings.host != target.settings.host { localMCP.close() }
         if workspace?.activeID == id, settings == target.settings { publishWorkspace(); if let requestedThread { try await selectThread(requestedThread) } else if connected { try await listThreads() }; return }
         await flushDrafts()
         let reuse = connected && WorkspaceCatalog.sameServer(settings, target.settings)
@@ -336,7 +343,9 @@ import Quartz
             let attachmentKey = kind == "reply" ? MessageMediaCache.replyKey(key) : key
             saved["text"] = value["text"] as? String ?? ""
             saved["mode"] = value["mode"] as? String == "plan" ? "plan" : "default"
-            if let quote = value["quote"] as? [String: Any] { saved["quote"] = quote.filter { ["id", "platform", "conversation", "author", "text", "timestamp"].contains($0.key) } }
+            let quotes = value["quotes"] as? [[String: Any]] ?? (value["quote"] as? [String: Any]).map { [$0] } ?? []
+            guard quotes.count <= 50 else { throw ClientError.message("草稿引用数量超限。") }
+            saved["quotes"] = quotes.map { quote in quote.filter { ["draftId", "id", "platform", "accountId", "conversationId", "conversation", "author", "text", "timestamp", "time", "attachmentId"].contains($0.key) } }
             var files: [[String: Any]] = []
             let ids = value["attachmentIds"] as? [String] ?? []
             guard ids.count <= AttachmentStore.countLimit else { throw ClientError.message("草稿附件数量超限。") }
@@ -466,6 +475,25 @@ import Quartz
         }
     }
     func cancelAccountLogin() async { try? await remoteAccount.cancel(); accountWatch?.cancel() }
+    private func localMCPAction(_ body: [String: Any]) async throws {
+        let operation = body["operation"] as? String ?? "snapshot"
+        var params = body.filter { ["server", "config"].contains($0.key) }
+        let value: [String: Any]
+        if operation == "share" {
+            guard connected, let thread = selectedThread, !remoteAccount.busy, remoteAccount.login == nil else { throw ClientError.message("请先连接远端并打开一个已有 Codex 会话。") }
+            let current = epoch, target = settings
+            value = try await localMCP.share(settings: target, thread: thread) { [weak self] method, args in
+                guard let self, self.epoch == current, self.settings.host == target.host else { throw CancellationError() }
+                return try await self.rpc.localMCPConfiguration(method, params: args, thread: thread)
+            }
+            guard current == epoch else { localMCP.close(); throw ClientError.message("连接已切换，本地 MCP 远端访问已关闭。") }
+        } else {
+            guard ["snapshot", "readConfig", "save", "start", "stop", "remove", "tools", "stopBridge", "revoke"].contains(operation) else { throw ClientError.message("不支持的本地 MCP 操作。") }
+            if operation == "revoke" { guard let thread = selectedThread else { throw ClientError.message("请先选择要撤销的会话。") }; params["threadId"] = thread }
+            value = try await localMCP.request(operation, params)
+        }
+        attachmentReply(body, value: value)
+    }
     private func refreshAccountMetadata() async {
         let current = epoch
         guard let account = try? await remoteAccount.read(), current == epoch else { return }
@@ -503,6 +531,7 @@ import Quartz
                 switch action {
                 case "settings": openSettings?()
                 case "remoteAccount": try await accountAction(body)
+                case "localMCP": try await localMCPAction(body)
                 case "projectAction":
                     if remoteAccount.busy { throw ClientError.message("正在获取授权信息，请稍后切换项目。") }
                     if remoteAccount.login != nil { try await remoteAccount.cancel(); accountWatch?.cancel() }
@@ -1422,7 +1451,7 @@ import Quartz
         } catch { fputs("diagnostic failed: \(error.localizedDescription)\n", stderr) }
         close()
     }
-    func close() { accountReady = false; accountWatch?.cancel(); remoteAccount.disconnected(); connecting = false; reconnectAllowed = false; messageReconnectAllowed = false; recovery.stop(); messageRecovery.stop(); connected = false; epoch = UUID(); questions.clear(); questionAttention.clear(); goalWatch?.cancel(); follower.stop(); stopPlan(); stopAgents(); eventRefresh?.cancel(); previewPanel?.close(); attachmentTransport.cancelAll(); attachments.close(); messageMediaCache.close(); gateway.close(); rpc.close(); flushWaiters.values.forEach { $0.resume() }; flushWaiters.removeAll() }
+    func close() { localMCP.close(); accountReady = false; accountWatch?.cancel(); remoteAccount.disconnected(); connecting = false; reconnectAllowed = false; messageReconnectAllowed = false; recovery.stop(); messageRecovery.stop(); connected = false; epoch = UUID(); questions.clear(); questionAttention.clear(); goalWatch?.cancel(); follower.stop(); stopPlan(); stopAgents(); eventRefresh?.cancel(); previewPanel?.close(); attachmentTransport.cancelAll(); attachments.close(); messageMediaCache.close(); gateway.close(); rpc.close(); flushWaiters.values.forEach { $0.resume() }; flushWaiters.removeAll() }
     static func icons() -> [String: String] {
         let symbols = ["zap":"bolt.fill", "target":"scope", "list-checks":"checklist", "panel-left":"sidebar.left", "panel-right":"sidebar.right", "square-pen":"square.and.pencil", "folder":"folder", "chevron-down":"chevron.down", "chevron-right":"chevron.right", "chevrons-up-down":"chevron.up.chevron.down", "settings-2":"slider.horizontal.3", "server":"server.rack", "git-branch":"point.3.connected.trianglepath.dotted", "file-code-2":"doc.text", "file-text":"doc.text", "image":"photo", "check":"checkmark", "copy":"doc.on.doc", "thumbs-up":"hand.thumbsup", "thumbs-down":"hand.thumbsdown", "plus":"plus", "arrow-up":"arrow.up", "x":"xmark", "quote":"quote.opening", "message-circle":"message", "send":"paperplane", "corner-up-left":"arrowshape.turn.up.left", "users":"person.2", "user-round":"person", "terminal":"terminal"]
         var result: [String: String] = [:]

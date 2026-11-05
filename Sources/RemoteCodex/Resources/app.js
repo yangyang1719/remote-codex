@@ -5,7 +5,8 @@
   const make = (tag, cls, text) => { const node = document.createElement(tag); if (cls) node.className = cls; if (text != null) node.textContent = text; return node; };
   const state = { demo: false, connected: false, loading: false, host: 'my-dev-server', project: '', threads: [], active: null, items: {}, cursors: {}, historyLoading: {}, visibleCounts: {}, sync: {}, access: {}, approvals: [], drafts: {}, quotes: {}, attachments: {}, remotePreviews: {}, platform: 'whatsapp', conversations: [], selected: {}, messages: {}, replyDrafts: {}, seenDrafts: {}, pendingReply: null, sendPending: null, running: {}, icons: {}, gateway: false, gatewayText: '正在检查远端消息服务…' };
   const messageFormat = window.RemoteCodexMessageFormat(state);
-  let commands, session, drafts, workspaceNavigation, messageMedia, whatsappLink, sendHelp, inbox, appearance, asyncQuestions, remoteAccount, runState; state.remoteRuns = {};
+  const messageQuotes = window.RemoteCodexMessageQuotes;
+  let commands, session, drafts, workspaceNavigation, messageMedia, whatsappLink, sendHelp, inbox, appearance, asyncQuestions, remoteAccount, runState, localMCP; state.remoteRuns = {};
   const post = (action, data = {}) => {
     if (action === 'send') { const conversation = current(); data = { ...data, messageSelection: { platform: state.platform, conversationId: conversation?.id || null } }; }
     if (state.demo && action !== 'settings') { demoAction(action, data); return; }
@@ -18,7 +19,7 @@
   function attachmentRequest(action, data) {
     if (state.demo) return Promise.reject(new Error('请在实际客户端中添加附件。'));
     const bridgeId = crypto.randomUUID();
-    return new Promise((resolve, reject) => { const timer = setTimeout(() => { bridgeRequests.delete(bridgeId); reject(new Error(action === 'usageRead' ? '查询用量超时，请稍后刷新。' : '操作结果未确认，请先查看最新记录。')); }, (['answerAsyncQuestion','projectAction','threadAction','loadThreadPage','refreshProjectThreads','usageRead'].includes(action) || action.startsWith('messageMedia') || action.startsWith('whatsappLink') || action.startsWith('viewedImage')) ? 120000 : 30000); bridgeRequests.set(bridgeId, { resolve, reject, timer }); post(action, { ...data, bridgeId }); });
+    return new Promise((resolve, reject) => { const timer = setTimeout(() => { bridgeRequests.delete(bridgeId); reject(new Error(action === 'usageRead' ? '查询用量超时，请稍后刷新。' : '操作结果未确认，请先查看最新记录。')); }, action === 'localMCP' ? 180000 : (['answerAsyncQuestion','projectAction','threadAction','loadThreadPage','refreshProjectThreads','usageRead'].includes(action) || action.startsWith('messageMedia') || action.startsWith('whatsappLink') || action.startsWith('viewedImage')) ? 120000 : 30000); bridgeRequests.set(bridgeId, { resolve, reject, timer }); post(action, { ...data, bridgeId }); });
   }
   const viewedImages = window.RemoteCodexViewedImages({ state, make, icon, request: attachmentRequest });
   const attachmentRows = () => state.attachments[key()] || [];
@@ -312,6 +313,7 @@
     if (state.sendPending) return '上一条消息正在提交，请等待确认，不要重复发送。';
     if (state.commandPending || state.workspaceBusy) return '正在处理当前操作，请稍后发送。';
     if (state.loading || state.draftsReady === false) return '正在恢复会话或草稿，请稍后发送。';
+    if (forDraft && state.quotePreparing?.[JSON.stringify([state.draftScope, key()])]) return '正在准备引用的附件，请等待完成后发送。';
     if (state.access[state.active] === 'busy') return '暂未能加入会话所在服务。可稍后点击“继续此会话”重试。文字和附件已保留。';
     if (state.access[state.active] === 'resuming') return '正在申请此会话的写入权，请稍候。';
     if (forDraft && attachmentRows().some(file => file.status === 'adding')) return '附件正在添加，请等待完成后发送。';
@@ -322,15 +324,17 @@
     if (!reason) return;
     state.sendBlockNote = true; attachmentNote('未发送：' + reason);
   }
-  function hasCodexDraft() { return !!(q('#cmsg-input').value.trim() || state.quotes[key()] || attachmentRows().length); }
+  function quoteRows(draftKey = key()) { return state.quotes[draftKey] = messageQuotes.rows(state.quotes[draftKey]); }
+  function hasCodexDraft() { return !!(q('#cmsg-input').value.trim() || quoteRows().length || attachmentRows().length); }
   function renderControls() {
     const title = state.threads.find(t => t.id === state.active); q('.chat-heading h2').textContent = title ? title.name || title.preview?.slice(0, 30) || '远端会话' : '新对话'; q('.location').replaceChildren(icon('git-branch'), document.createTextNode(state.projectName || state.project.split('/').pop() || '远端工作区'));
     q('.location').replaceChildren(icon('git-branch'), document.createTextNode(state.project.split('/').pop() || state.host));
     const mode = state.access[state.active], running = mode === 'writable' && !!state.running[state.active], canStop = running && !hasCodexDraft(); q('#cmsg-send-codex').setAttribute('aria-label', canStop ? '停止当前任务' : running ? '发送补充消息' : '发送给 Codex'); q('#cmsg-send-codex').replaceChildren(icon(canStop ? 'x' : 'arrow-up'));
     q('.chat').dataset.access = mode || 'viewing';
-    q('#cmsg-send-codex').disabled = !!state.sendPending || !!state.commandPending || state.loading || state.workspaceBusy || state.workspaceEmpty || state.draftsReady === false || mode === 'resuming' || mode === 'busy' || !state.connected || (!canStop && attachmentRows().some(file => ['adding', 'error'].includes(file.status)));
+    q('#cmsg-send-codex').disabled = !!state.sendPending || !!state.commandPending || state.loading || state.workspaceBusy || state.workspaceEmpty || state.draftsReady === false || mode === 'resuming' || mode === 'busy' || !state.connected || !!state.quotePreparing?.[JSON.stringify([state.draftScope, key()])] || (!canStop && attachmentRows().some(file => ['adding', 'error'].includes(file.status)));
     if (q('#attachment-add')) { q('#attachment-add').disabled = !!state.sendPending || !!state.commandPending; q('#attachment-list').querySelectorAll('.attachment-remove').forEach(button => button.disabled = !!state.sendPending || !!state.commandPending); }
-    q('#cmsg-input').disabled = !!state.workspaceEmpty; q('#cmsg-input').placeholder = mode === 'busy' ? '可先写草稿，稍后点击“继续此会话”重试…' : '继续提问，或从右侧引用一条消息…';
+    q('#cmsg-input').disabled = !!state.workspaceEmpty; q('#cmsg-input').placeholder = mode === 'busy' ? '可先写草稿，稍后点击“继续此会话”重试…' : '继续提问，或从右侧引用消息…';
+    renderQuote();
     accessBanner();
     commands?.render();
     session?.controls();
@@ -357,8 +361,35 @@
     return [...byID.values()];
   }
   function restoreCodexDraft() { q('#cmsg-input').value = state.drafts[key()] || ''; closeProjectPicker(); commands?.restore(); renderQuote(); renderAttachments(); attachmentNote(); }
-  function renderQuote() { const quote = state.quotes[key()]; q('#cmsg-source').hidden = !quote; if (quote) { q('#cmsg-source-label').textContent = [platformName(quote.platform), quote.conversation, quote.author].filter(Boolean).join(' · '); messageFormat.render(q('#cmsg-source-text'), quote.text, quote.platform); } }
-  function quoteMessage(message, conversation) { saveCodexDraft(); state.quotes[key()] = { ...message, platform: conversation.platform, conversation: conversation.name, author: message.author || '你' }; drafts?.codex(key()); renderQuote(); renderControls(); q('#cmsg-input').focus({ preventScroll: true }); }
+  function renderQuote() {
+    const quotes = quoteRows(), source = q('#cmsg-source'), list = q('#cmsg-source-text'), busy = !!state.sendPending || !!state.commandPending;
+    source.hidden = !quotes.length;
+    const signature = JSON.stringify([quotes, busy]); if (source._quoteSignature === signature) return; source._quoteSignature = signature;
+    source.classList.add('quote-collection'); list.className = 'quote-list'; const scroll = list.scrollTop;
+    q('#cmsg-source-label').textContent = `已引用 ${quotes.length} 条消息`;
+    q('#cmsg-remove').setAttribute('aria-label', '清空全部引用'); q('#cmsg-remove').title = '清空全部引用'; q('#cmsg-remove').disabled = busy;
+    list.replaceChildren(...quotes.map(quote => {
+      const row = make('div', 'quote-row'); row.dataset.quoteId = quote.draftId;
+      const copy = make('div', 'quote-copy'), label = [platformName(quote.platform), quote.conversation, quote.author !== quote.conversation ? quote.author : '', quote.time || (quote.timestamp ? new Date(quote.timestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '')].filter(Boolean).join(' · ');
+      copy.append(make('div', 'quote-label', label)); const text = make('div', 'quote-text'); messageFormat.render(text, quote.text, quote.platform); text.title = messageFormat.plain(quote.text, quote.platform); copy.append(text);
+      const remove = make('button', 'quote-remove icon-button cursor-interaction'); remove.type = 'button'; remove.setAttribute('aria-label', '移除这条引用'); remove.title = '移除这条引用'; remove.disabled = busy; remove.append(icon('x')); remove.onclick = () => removeQuotes([quote.draftId]);
+      row.append(copy, remove); return row;
+    })); list.scrollTop = scroll; icons(source);
+  }
+  function removeQuotes(ids) {
+    if (state.sendPending || state.commandPending) return;
+    const removed = new Set(ids), rows = quoteRows(), files = new Set(rows.filter(row => removed.has(row.draftId)).map(row => row.attachmentId).filter(Boolean));
+    state.quotes[key()] = rows.filter(row => !removed.has(row.draftId));
+    state.attachments[key()] = attachmentRows().filter(file => { if (!files.has(file.id)) return true; file.cancelled = true; post('attachmentRemove', { id: file.id }); return false; });
+    drafts?.codex(key()); renderQuote(); renderAttachments(); renderControls();
+  }
+  function quotedMessage(message, conversation) { const candidate = messageQuotes.from(message, conversation); return quoteRows().some(row => messageQuotes.identity(row) === messageQuotes.identity(candidate)); }
+  function quoteMessage(message, conversation) {
+    saveCodexDraft(); const rows = quoteRows(), candidate = messageQuotes.from(message, conversation);
+    if (rows.some(row => messageQuotes.identity(row) === messageQuotes.identity(candidate))) { attachmentNote('已引用这条消息。'); return false; }
+    if (rows.length >= messageQuotes.limit) { attachmentNote(`每次最多引用 ${messageQuotes.limit} 条消息，请先移除部分引用。`); return false; }
+    state.quotes[key()] = [...rows, candidate]; drafts?.codex(key()); attachmentNote(); renderQuote(); renderControls(); q('#cmsg-input').focus({ preventScroll: true }); return true;
+  }
   function saveReplyDraft() { const c = current(); if (c) { const value = q('#cmsg-reply').value, changed = (state.replyDrafts[c.id] || '') !== value; state.replyDrafts[c.id] = value; if (changed) drafts?.reply(c.id); } }
   function picker(open) {
     inbox?.open(open);
@@ -459,7 +490,7 @@
       case 'delta': { const items = state.items[event.threadId] ||= [], index = items.findIndex(i => i.id === event.itemId), old = items[index] || { id: event.itemId, type: 'agentMessage', text: '' }, item = { ...old, text: (old.text || '') + event.delta }; if (index < 0) items.push(item); else items[index] = item; if (event.threadId === state.active) renderTranscript(); break; }
       case 'commandOutput': { const items = state.items[event.threadId] ||= [], index = items.findIndex(i => i.id === event.itemId), item = items[index] || {id:event.itemId,type:'commandExecution',status:'inProgress',startedAtMs:Date.now()}; const updated = { ...item, aggregatedOutput: (item.aggregatedOutput || '') + event.delta }; if (index < 0) items.push(updated); else items[index] = updated; if (event.threadId === state.active) renderTranscript(); break; }
       case 'turn': state.running[event.threadId] = state.access[event.threadId] === 'writable' && event.turn?.status === 'inProgress'; if (event.turn?.status !== 'inProgress') state.items[event.threadId] = (state.items[event.threadId] || []).map(item => item.type === 'reasoning' && item.status === 'inProgress' ? { ...item, status: 'completed' } : item); if (event.threadId === state.active) renderTranscript(); break;
-      case 'sendAccepted': { const pending = state.sendPending; if (pending && (!event.requestId || pending.requestId === event.requestId)) { const sent = new Set(pending.attachmentIds || []), source = pending.threadId || pending.key; for (const draftKey of new Set([source, event.threadId])) { state.attachments[draftKey] = (state.attachments[draftKey] || []).filter(file => !sent.has(file.id)); if (state.drafts[draftKey] === pending.draft) delete state.drafts[draftKey]; if (state.quotes[draftKey] === pending.quote) delete state.quotes[draftKey]; drafts?.codex(draftKey); } if (key() === source || key() === event.threadId) restoreCodexDraft(); state.sendPending = null; } renderAttachments(); renderControls(); break; }
+      case 'sendAccepted': { const pending = state.sendPending; if (pending && (!event.requestId || pending.requestId === event.requestId)) { const sent = new Set(pending.attachmentIds || []), sentQuotes = new Set((pending.quotes || []).map(row => row.draftId)), source = pending.threadId || pending.key; for (const draftKey of new Set([source, event.threadId])) { state.attachments[draftKey] = (state.attachments[draftKey] || []).filter(file => !sent.has(file.id)); if (state.drafts[draftKey] === pending.draft) delete state.drafts[draftKey]; state.quotes[draftKey] = quoteRows(draftKey).filter(row => !sentQuotes.has(row.draftId)); drafts?.codex(draftKey); } if (key() === source || key() === event.threadId) restoreCodexDraft(); state.sendPending = null; } renderAttachments(); renderControls(); break; }
       case 'models': break;
       case 'approval': { const index = state.approvals.findIndex(a => a.token === event.token); if (index >= 0) state.approvals[index] = event; else { state.approvals.push(event); state.questionAttention = event.token; } renderThreads(); renderTranscript(); break; }
       case 'approvalAnswered': state.approvals = state.approvals.filter(a => a.token !== event.token); if (state.explicitQuestionFocus?.token === event.token) state.explicitQuestionFocus = null; renderThreads(); renderTranscript(); break;
@@ -475,6 +506,7 @@
     session?.receive(event);
     commands?.receive(event);
     remoteAccount?.receive(event);
+    localMCP?.receive(event);
     runState?.receive(event);
   }
   function hydrateDemo() {
@@ -534,23 +566,24 @@
   q('#cmsg-navigation-toggle').onclick = () => navigation(q('#cmsg-navigation').hidden); q('#cmsg-toggle').onclick = () => sidebar(q('#cmsg-sidebar').hidden); q('#cmsg-picker-toggle').onclick = () => picker(q('#cmsg-conversation-picker').hidden);
   root.addEventListener('pointerdown', e => { if (!q('#cmsg-switcher').contains(e.target)) picker(false); }); root.addEventListener('keydown', e => { if (e.key === 'Escape') picker(false); });
   root.querySelectorAll('[data-platform]').forEach(button => button.onclick = () => { saveReplyDraft(); state.platform = button.dataset.platform === 'wa' ? 'whatsapp' : 'telegram'; drafts?.preferences(); cancelReply(); picker(false); renderConversation(); if (current()) post('getMessages', { conversationId: current().id }); });
-  q('#cmsg-remove').onclick = () => { delete state.quotes[key()]; drafts?.codex(key()); renderQuote(); renderControls(); };
+  q('#cmsg-remove').onclick = () => removeQuotes(quoteRows().map(row => row.draftId));
   commands = window.RemoteCodexCommands({ root, state, q, make, icon, icons, key, request: attachmentRequest, saveDraft: () => saveCodexDraft(true), restoreDraft: restoreCodexDraft, controls: renderControls, send: sendCodexDraft, richText: pagedText, setFast: enabled => session.setFast(enabled), sessionValues: () => session.values() });
   q('#cmsg-input').title = '回车发送 · Ctrl＋回车换行';
   q('#cmsg-input').oninput = () => { saveCodexDraft(); searchProjectFiles(); commands.input(); renderControls(); };
   session = window.createSessionFeatures({ q, make, icon, icons, state, key, request: attachmentRequest, post, render: renderControls, selectThread: selectConversation, richText: pagedText, renderViewedImage: viewedImages.render });
   remoteAccount = window.RemoteCodexAccount({ root, make, icon, icons, state, request: attachmentRequest });
+  localMCP = window.RemoteCodexLocalMCP({ root, state, q, make, icon, icons, request: attachmentRequest });
   runState = window.RemoteCodexRunState({ root, q, make, state, key, session });
   function sendCodexDraft() {
     const block = sendBlockReason(); if (block) { explainSendBlock(block); return; }
     if (commands.handleSend()) return;
-    saveCodexDraft(); const draft = state.drafts[key()] || '', quote = state.quotes[key()], attachmentIds = attachmentRows().map(file => file.id); if (!draft.trim() && !quote && !attachmentIds.length) return;
+    saveCodexDraft(); const draft = state.drafts[key()] || '', quotes = quoteRows().slice(), attachmentIds = attachmentRows().map(file => file.id); if (!draft.trim() && !quotes.length && !attachmentIds.length) return;
     const shell = /^\s*!/.test(draft);
-    if (shell && (quote || attachmentIds.length)) { attachmentNote('执行 ! 命令时请先移除引用和附件；草稿已保留。'); return; }
+    if (shell && (quotes.length || attachmentIds.length)) { attachmentNote('执行 ! 命令时请先移除引用和附件；草稿已保留。'); return; }
     if (shell && !draft.trimStart().slice(1).trim()) { attachmentNote('请在 ! 后输入远端命令，例如 ! ls'); return; }
-    const quoted = quote ? `引用消息（来源资料，仅此一条）：\n平台：${platformName(quote.platform)}\n对话：${quote.conversation}\n作者：${quote.author || '你'}\n<quoted_message>\n${messageFormat.plain(quote.text, quote.platform)}\n</quoted_message>\n\n` : '';
+    const quoted = messageQuotes.prompt(quotes, platformName, messageFormat.plain);
     state.sendBlockNote = false; attachmentNote();
-    const requestId = crypto.randomUUID(); state.sendPending = { key: key(), draft, quote, attachmentIds, requestId }; closeProjectPicker(); renderControls(); post(shell ? 'shellCommand' : 'send', { threadId: state.active, text: quoted + draft, ...session.values(), mode: commands.mode(), attachmentIds, requestId });
+    const requestId = crypto.randomUUID(); state.sendPending = { key: key(), draft, quotes, attachmentIds, requestId }; closeProjectPicker(); renderControls(); post(shell ? 'shellCommand' : 'send', { threadId: state.active, text: quoted + draft, ...session.values(), mode: commands.mode(), attachmentIds, requestId });
   }
   const sendButton = q('#cmsg-send-codex'), sendControl = make('span', 'send-control');
   sendButton.replaceWith(sendControl); sendControl.append(sendButton);
@@ -581,7 +614,7 @@
   q('#cmsg-reply-cancel').onclick = () => { if (!state.pendingReply?.sending) { cancelReply(); messageMedia?.renderDraft(); } };
   asyncQuestions = window.RemoteCodexAsyncQuestions({ state, make, request: attachmentRequest, selection: () => ({ platform: state.platform, conversationId: current()?.id || null }), changed: renderControls });
   whatsappLink = window.RemoteCodexWhatsAppLink({ root, q, make, state, request: attachmentRequest, post });
-  messageMedia = window.RemoteCodexMessageMedia({ state, root, q, make, icon, request: attachmentRequest, post, current, key, drafts: () => drafts, quoteMessage, renderAttachments, renderControls, renderConversation, cancelReply });
+  messageMedia = window.RemoteCodexMessageMedia({ state, root, q, make, icon, request: attachmentRequest, post, current, key, drafts: () => drafts, quoteMessage, quotedMessage, quoteCount: () => quoteRows().length, renderAttachments, renderControls, renderConversation, cancelReply });
   appearance = window.RemoteCodexAppearance({ root, make });
   inbox = window.RemoteCodexInbox({ root, state, q, make, icon, icons, format: (text, platform) => messageFormat.plain(text, platform), choose: id => { saveReplyDraft(); state.selected[state.platform] = id; drafts?.preferences(); cancelReply(); picker(false); renderConversation(); post('getMessages', { conversationId: id }); } });
   sidebar(localStorage.getItem('messagesOpen') !== 'false'); navigation(localStorage.getItem('navigationOpen') !== 'false'); renderThreads(); renderTranscript(); renderConversation();
