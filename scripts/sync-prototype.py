@@ -20,6 +20,7 @@ source = source.replace('SSH 已连接', '正在连接…').replace('回复产�
 css = '''
 <style>
 html,body{margin:0;padding:0;background:transparent}
+#codex-message-concept .message-text{white-space:pre-wrap;overflow-wrap:anywhere}
 #codex-message-concept .app{border:0;border-radius:0;box-shadow:none;min-height:100vh}
 #codex-message-concept #cmsg-input,#codex-message-concept #cmsg-reply,#codex-message-concept #cmsg-input:focus,#codex-message-concept #cmsg-reply:focus,#codex-message-concept #cmsg-input:focus-visible,#codex-message-concept #cmsg-reply:focus-visible{outline:none;box-shadow:none}
 #codex-message-concept .file-reference{display:inline-flex;align-items:baseline;gap:4px;max-width:100%;padding:0 5px;border-radius:5px;background:var(--app-soft);color:inherit;font:inherit;font-size:.94em;line-height:1.5;vertical-align:baseline;overflow-wrap:anywhere;cursor:pointer}
@@ -33,6 +34,12 @@ html,body{margin:0;padding:0;background:transparent}
 #codex-message-concept .transcript,#codex-message-concept .conversation-feed,#app-thread-list{overflow-y:auto;min-height:0}
 #codex-message-concept .chat-header,#codex-message-concept .compose-wrap,#codex-message-concept .platforms,#codex-message-concept .conversation-switcher,#codex-message-concept .reply-wrap{flex-shrink:0}
 #app-thread-list{flex:1}
+#codex-message-concept .workspace-toolbar{display:flex;align-items:flex-start;gap:4px}
+#codex-message-concept .workspace-toolbar .workspace-add{flex:1;min-width:0}
+#codex-message-concept .workspace-refresh{flex:0 0 auto;padding:8px;color:var(--app-muted);font:inherit;font-size:12px;border-radius:6px}
+#codex-message-concept .workspace-refresh:hover{background:var(--app-soft)}
+#codex-message-concept .workspace-dialog .workspace-checkbox{display:flex;align-items:center;gap:7px;line-height:1.6}
+#codex-message-concept .workspace-dialog .workspace-checkbox input{width:auto;padding:0;accent-color:var(--app-text)}
 #codex-message-concept .workspace-add{padding:8px 9px;margin:0 0 7px;width:100%;color:var(--app-muted);text-align:left;font-size:11px;border-radius:6px}
 #codex-message-concept .workspace-add:hover,#codex-message-concept .workspace-project-heading:hover{background:var(--app-soft)}
 #codex-message-concept .workspace-project{margin-bottom:10px}
@@ -367,6 +374,15 @@ html,body{margin:0;padding:0;background:transparent}
 #codex-message-concept .viewed-image-thumb{width:112px;height:112px;flex:0 0 112px;padding:3px;overflow:hidden;border-radius:12px;border:1px solid var(--app-line);background:var(--app-soft);color:var(--app-muted);cursor:zoom-in;display:flex;align-items:center;justify-content:center;white-space:pre-wrap;font:inherit;font-size:10px}
 #codex-message-concept .viewed-image-thumb img{display:block;max-width:100%;max-height:100%;object-fit:contain;border-radius:8px}
 #codex-message-concept .viewed-image-status{font-size:10px;line-height:1.6;overflow-wrap:anywhere;max-width:360px}
+#codex-message-concept .async-question-panel{flex:0 1 auto;min-height:0;max-height:36vh;overflow:auto;margin:0 22px 10px;overscroll-behavior:contain}
+#codex-message-concept .async-question-panel[hidden]{display:none}
+#codex-message-concept .async-question-panel .async-question{margin:0 0 8px;gap:8px;padding:12px}
+#codex-message-concept .async-question-panel .async-question-options{flex-direction:row;flex-wrap:wrap;gap:7px}
+#codex-message-concept .async-question-panel .question-option{display:flex;align-items:center;gap:6px;border:1px solid var(--app-line);padding:6px 9px;border-radius:7px;font-size:12px}
+#codex-message-concept .async-question-panel .question-text{margin:0;min-height:48px;max-height:100px}
+#codex-message-concept .async-question-panel .async-question-status:empty{display:none}
+#codex-message-concept .async-question-panel .small-button{align-self:flex-end}
+#codex-message-concept .async-question-panel .async-question:focus{outline:none;box-shadow:inset 0 0 0 1px var(--app-line)}
 #codex-message-concept .local-mcp-dialog{width:min(720px,90vw);max-height:82vh;overflow:auto}
 #codex-message-concept .local-mcp-dialog p{font-size:12px;line-height:1.7;color:var(--app-muted);overflow-wrap:anywhere}
 #codex-message-concept .local-mcp-dialog section[hidden]{display:none}

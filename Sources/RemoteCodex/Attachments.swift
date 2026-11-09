@@ -140,6 +140,31 @@ struct ChatAttachment {
     private var cancelled = Set<UUID>()
     private let root = FileManager.default.temporaryDirectory.appendingPathComponent("RemoteCodexTransfers-" + UUID().uuidString)
 
+    static let projectDirectoryScript = """
+import os,sys,json
+from pathlib import Path
+path=Path(sys.argv[1]);create=sys.argv[2]=='create'
+try:
+    if not path.is_absolute():raise ValueError('absolute')
+    if not path.exists() and create:path.mkdir(parents=True,mode=0o700,exist_ok=True)
+    if not path.is_dir():raise ValueError('not-directory')
+    if not os.access(path,os.R_OK|os.X_OK):raise PermissionError('unreadable')
+    print(json.dumps({'path':str(path.resolve())}))
+except PermissionError:print(json.dumps({'error':'permission'}))
+except (OSError,ValueError):print(json.dumps({'error':'directory'}))
+"""
+    func prepareProjectDirectory(settings: ConnectionSettings, create: Bool) async throws -> String {
+        try settings.validate()
+        let command = "python3 -c " + ConnectionSettings.quote(Self.projectDirectoryScript) + " " + ConnectionSettings.quote(settings.project) + " " + ConnectionSettings.quote(create ? "create" : "existing")
+        let data = try await run(command, settings: settings, failureMessage: "远端目录检查失败，项目尚未添加。")
+        let value = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
+        if value["error"] as? String == "permission" { throw ClientError.message("没有权限创建或读取此远端目录，请选择有权限的路径。") }
+        guard let path = value["path"] as? String, path.hasPrefix("/"), !path.contains("\n"), !path.contains("\0") else {
+            throw ClientError.message(create ? "无法创建远端项目目录，路径可能已被文件占用。" : "远端目录不存在，请勾选“目录不存在时创建”或选择已有目录。")
+        }
+        return path
+    }
+
     func upload(_ file: ChatAttachment, settings: ConnectionSettings) async throws -> String {
         try settings.validate()
         let command = "python3 -c " + ConnectionSettings.quote(Self.uploadScript) + " " + [file.id, file.localURL.lastPathComponent, String(file.size), file.sha256].map(ConnectionSettings.quote).joined(separator: " ")
@@ -159,7 +184,7 @@ struct ChatAttachment {
         try data.write(to: url, options: .atomic)
         return url
     }
-    private func run(_ command: String, settings: ConnectionSettings, input: URL? = nil) async throws -> Data {
+    private func run(_ command: String, settings: ConnectionSettings, input: URL? = nil, failureMessage: String = "附件传输失败，草稿已保留。") async throws -> Data {
         let id = UUID(), process = Process(), directory = root.appendingPathComponent(id.uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         let outputURL = directory.appendingPathComponent("output"), errorURL = directory.appendingPathComponent("errors")
@@ -185,7 +210,7 @@ struct ChatAttachment {
                         guard ended.terminationStatus == 0 else {
                             let data = try Data(contentsOf: errorURL)
                             let detail = String(data: data.prefix(1200), encoding: .utf8) ?? ""
-                            throw ClientError.message("附件传输失败，草稿已保留。" + (detail.isEmpty ? "" : "\n" + detail))
+                            throw ClientError.message(failureMessage + (detail.isEmpty ? "" : "\n" + detail))
                         }
                         let data = try Data(contentsOf: outputURL)
                         guard data.count <= AttachmentStore.fileLimit + 8192 else { throw ClientError.message("远端附件超出大小限制。") }

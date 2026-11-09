@@ -1,13 +1,13 @@
 'use strict';
 window.RemoteCodexProjects = ({ root, state, q, make, icon, icons, request, selectThread, flush, controls }) => {
-  let workspace, menu, busy = false;
+  let workspace, menu, busy = false, syncing = false;
   const pages = new Map(), archiveViews = new Map(), loadStates = new Map();
   const feedback = make('div', 'workspace-feedback'); feedback.setAttribute('role', 'status'); feedback.hidden = true; q('.nav-bottom').before(feedback);
   const dialog = document.createElement('dialog'); dialog.id = 'workspace-dialog'; dialog.className = 'workspace-dialog'; root.append(dialog);
   function notice(text = '') { feedback.textContent = text; feedback.hidden = !text; }
   function closeMenu() { menu?.remove(); menu = null; }
   async function perform(action, values) {
-    if (busy) return null;
+    if (busy) throw new Error('正在处理项目操作，请稍候。');
     busy = true; state.workspaceBusy = true; controls(); render(); notice();
     try { return await request(action, values); }
     catch (error) { notice(error.message); throw error; }
@@ -30,16 +30,18 @@ window.RemoteCodexProjects = ({ root, state, q, make, icon, icons, request, sele
         for (const alias of workspace.aliases || []) { const option = make('option'); option.value = alias; list.append(option); }
         input.setAttribute('list', list.id); form.append(list);
       }
-      inputs[field.key] = input; form.append(label, input);
+      inputs[field.key] = input;
+      if (field.type === 'checkbox') { input.type = 'checkbox'; input.checked = field.checked !== false; label.className = 'workspace-checkbox'; label.prepend(input); form.append(label); }
+      else form.append(label, input);
     }
     const error = make('p', 'workspace-dialog-error'); error.id = 'workspace-dialog-error'; error.setAttribute('role', 'alert');
     const actions = make('div', 'workspace-dialog-actions'), cancel = make('button', 'small-button', '取消'), save = make('button', 'small-button strong', submitLabel);
     cancel.type = 'button'; cancel.onclick = () => dialog.close(); save.type = 'submit'; save.id = 'workspace-save'; actions.append(cancel, save); form.append(error, actions); dialog.append(form);
     form.onsubmit = async event => {
-      event.preventDefault(); save.disabled = true;
-      try { await submit(Object.fromEntries(Object.entries(inputs).map(([key, input]) => [key, input.value.trim()]))); dialog.close(); }
+      event.preventDefault(); save.disabled = true; cancel.disabled = true;
+      try { await submit(Object.fromEntries(Object.entries(inputs).map(([key, input]) => [key, input.type === 'checkbox' ? input.checked : input.value.trim()]))); dialog.close(); }
       catch (failure) { error.textContent = failure.message; }
-      finally { save.disabled = false; }
+      finally { save.disabled = false; cancel.disabled = false; }
     };
     if (!dialog.open) dialog.showModal(); const first = Object.values(inputs)[0]; if (first) { first.focus(); first.select(); } else save.focus();
   }
@@ -77,7 +79,7 @@ window.RemoteCodexProjects = ({ root, state, q, make, icon, icons, request, sele
     const title = thread.name || thread.preview?.slice(0, 28) || '未命名会话'; button.title = title;
     if (project.pinned.includes(thread.id)) button.append(make('span', 'workspace-pin', '⌖'));
     if (thread.forkedFromId) { const fork = make('span', 'workspace-pin', '↳'); fork.title = '分叉会话'; button.append(fork); } button.append(make('span', 'workspace-thread-name', title));
-    const count = state.approvals.filter(a => a.params.threadId === thread.id || a.ownerThreadId === thread.id).length;
+    const count = state.approvals.filter(a => a.params.threadId === thread.id || a.ownerThreadId === thread.id).length + (state.asyncQuestions?.[thread.id]?.length || 0);
     if (count) button.append(make('span', 'question-badge', `待回答 ${count}`));
     else if (thread.status?.type === 'active') button.append(make('span', 'workspace-running', '•'));
     button.onclick = () => openProject(project.id, thread.id).catch(() => {});
@@ -88,12 +90,15 @@ window.RemoteCodexProjects = ({ root, state, q, make, icon, icons, request, sele
   }
   function render() {
     if (!workspace) return false;
-    const list = q('#app-thread-list'); list.replaceChildren();
+    const list = q('#app-thread-list'), scroll = list.scrollTop; list.replaceChildren();
     const add = make('button', 'workspace-add cursor-interaction', '+ 添加远端项目'); add.type = 'button'; add.disabled = busy;
-    add.onclick = () => form('添加远端项目', [{ key: 'host', label: 'SSH 主机别名', value: state.host || 'my-dev-server', required: true }, { key: 'path', label: '远端项目目录', placeholder: '/srv/projects/my-project', required: true }, { key: 'name', label: '项目名称（可选）' }], '添加并打开', async value => {
+    add.onclick = () => form('添加远端项目', [{ key: 'host', label: 'SSH 主机别名', value: state.host || 'my-dev-server', required: true }, { key: 'path', label: '远端项目目录', placeholder: '/srv/projects/my-project', required: true }, { key: 'name', label: '项目名称（可选）' }, { key: 'createDirectory', type: 'checkbox', label: '目录不存在时创建', checked: true }], '添加并打开', async value => {
       const added = await perform('projectAction', { operation: 'add', ...value }); if (added) await openProject(added.projectId);
-    }, '使用远端已有目录，沿用 SSH 认证。');
-    list.append(add);
+    }, '填写远端绝对路径，沿用 SSH 认证。已有目录直接使用；只创建目录，不初始化 Git 或启动会话。');
+    const tools = make('div', 'workspace-toolbar'), refresh = make('button', 'workspace-refresh cursor-interaction', syncing ? '同步中…' : '↻');
+    refresh.type = 'button'; refresh.title = '刷新项目与会话'; refresh.setAttribute('aria-label', '刷新项目与会话'); refresh.disabled = busy || syncing || !state.connected;
+    refresh.onclick = () => request('refreshWorkspace', {}).catch(error => notice(error.message));
+    tools.append(add, refresh); list.append(tools);
     for (const project of workspace.projects) {
       const section = make('section', 'workspace-project'); section.dataset.projectId = project.id;
       const header = make('div', 'workspace-project-heading' + (project.id === workspace.activeProjectId ? ' current' : ''));
@@ -119,15 +124,16 @@ window.RemoteCodexProjects = ({ root, state, q, make, icon, icons, request, sele
       list.append(section);
     }
     if (!workspace.projects.length) list.append(make('div', 'workspace-empty', '添加远端项目后开始使用。'));
-    icons(list); return true;
+    icons(list); list.scrollTop = scroll; return true;
   }
   function receive(event) {
+    if (event.type === 'workspaceSync') { syncing = event.status === 'loading'; if (event.status === 'error') notice(event.message); else if (event.status === 'ready') notice(); render(); }
     if (event.type === 'workspace') {
       workspace = event; state.projectName = event.projects.find(p => p.id === event.activeProjectId)?.name; state.projectId = event.activeProjectId; state.workspaceEmpty = !event.activeProjectId;
       render(); controls();
     }
     if (event.type === 'threads' && event.projectId) {
-      const previous = pages.get(event.projectId)?.threads || [], all = event.append ? [...previous, ...event.threads] : event.threads;
+      const previous = pages.get(event.projectId)?.threads || [], all = event.merge ? [...(event.threads || []), ...previous] : event.append ? [...previous, ...event.threads] : event.threads;
       const unique = new Map(); for (const thread of all || []) { const old = unique.get(thread.id); if (!old || Number(thread.updatedAt || thread.createdAt || 0) > Number(old.updatedAt || old.createdAt || 0)) unique.set(thread.id, thread); }
       pages.set(event.projectId, { threads: [...unique.values()], cursor: event.nextCursor }); loadStates.delete(event.projectId); render();
     }
@@ -143,7 +149,7 @@ window.RemoteCodexProjects = ({ root, state, q, make, icon, icons, request, sele
       pages.set(workspace.activeProjectId, page); render();
     }
     if (event.type === 'threadStatus') { for (const page of pages.values()) { const thread = page.threads.find(t => t.id === event.threadId); if (thread) thread.status = event.status; } render(); }
-    if (event.type === 'connection' && event.status !== 'connected') { closeMenu(); render(); }
+    if (event.type === 'connection') { if (event.status !== 'connected') { syncing = false; closeMenu(); } render(); }
   }
   root.addEventListener('pointerdown', event => { if (menu && !menu.contains(event.target)) closeMenu(); });
   root.addEventListener('keydown', event => { if (event.key === 'Escape') closeMenu(); });

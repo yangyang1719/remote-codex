@@ -1,6 +1,10 @@
 'use strict';
 window.RemoteCodexAsyncQuestions = ({ state, make, request, selection, changed }) => {
   const cards = new Map(), replies = new Map();
+  state.asyncQuestions ||= {};
+  const panel = make('section', 'async-question-panel'); panel.id = 'async-question-panel'; panel.hidden = true; panel.setAttribute('aria-label', 'Codex 待回答的问题');
+  document.querySelector('.compose-wrap').before(panel);
+  let focusToken;
   const identity = (item, index) => JSON.stringify(['request_user_input_async', item, index]);
   const key = (thread, id) => JSON.stringify([state.draftScope, thread, id]);
   function parse(text) {
@@ -21,7 +25,7 @@ window.RemoteCodexAsyncQuestions = ({ state, make, request, selection, changed }
     const { card, thread, id, options, custom, submit, status } = entry, answer = replies.get(key(thread, id));
     const disabled = !state.connected || !!state.sendPending || !!state.commandPending || state.asyncQuestionPending != null || ['busy', 'resuming'].includes(state.access[thread]);
     card.dataset.answered = String(answer != null);
-    if (answer != null) { status.textContent = '已回答：' + answer; submit.hidden = true; }
+    if (answer != null) { status.textContent = answer ? '已回答：' + answer : '已在其他窗口处理'; submit.hidden = true; }
     options.forEach(({ radio }) => radio.disabled = disabled || answer != null);
     custom.disabled = disabled || answer != null; submit.disabled = disabled || answer != null;
   }
@@ -29,8 +33,10 @@ window.RemoteCodexAsyncQuestions = ({ state, make, request, selection, changed }
     for (const item of items) if (item.type === 'userMessage') for (const reply of parse(textOf(item)) || []) replies.set(key(state.active, reply.questionItemId), reply.answer);
     for (const entry of cards.values()) controls(entry);
   }
-  function render(item, thread) {
+  function render(item, thread, offset = 0, pinned = false) {
     return (item.questions || []).map((question, index) => {
+      index += offset;
+      if (!pinned && (state.asyncQuestions[thread] || []).some(row => row.sourceItemId === item.id && row.questionIndex === index)) return null;
       const id = identity(item.id, index), address = key(thread, id);
       if (cards.has(address)) { const entry = cards.get(address); controls(entry); return entry.card; }
       const card = make('section', 'async-question'); card.dataset.questionId = id;
@@ -59,7 +65,28 @@ window.RemoteCodexAsyncQuestions = ({ state, make, request, selection, changed }
         finally { state.asyncQuestionPending = null; for (const value of cards.values()) controls(value); changed(); }
       };
       card.append(choices, custom, submit, status); controls(entry); return card;
-    });
+    }).filter(Boolean);
   }
-  return { render, history, sync, parse };
+  function renderPanel() {
+    const rows = state.asyncQuestions[state.active] || [], nodes = rows.flatMap(row => {
+      const nodes = render({ id: row.sourceItemId, questions: [row.question] }, state.active, row.questionIndex, true);
+      for (const node of nodes) { node.dataset.token = row.token; node.tabIndex = -1; }
+      return nodes;
+    });
+    if (panel.children.length !== nodes.length || nodes.some((node, index) => panel.children[index] !== node)) panel.replaceChildren(...nodes);
+    panel.hidden = !nodes.length;
+    if (focusToken) {
+      const node = nodes.find(node => node.dataset.token === focusToken);
+      if (node) { node.focus({ preventScroll: true }); panel.scrollTop = node.offsetTop - panel.offsetTop; focusToken = null; }
+    }
+  }
+  function receive(event) {
+    if (event.type === 'asyncQuestions') {
+      const previous = state.asyncQuestions[event.threadId] || [], next = event.questions || [], tokens = new Set(next.map(row => row.token));
+      for (const row of previous) if (!tokens.has(row.token)) replies.set(key(event.threadId, identity(row.sourceItemId, row.questionIndex)), '');
+      state.asyncQuestions[event.threadId] = next;
+    }
+    if (event.type === 'connection' && event.status !== 'connected') { state.asyncQuestions = {}; cards.clear(); replies.clear(); focusToken = null; }
+  }
+  return { render, history, sync, parse, receive, renderPanel, focus(token) { focusToken = token; renderPanel(); } };
 };

@@ -75,6 +75,7 @@ import Quartz
         value.onPage = { [weak self] root, id, items, prepend, more in
             guard let self else { return }
             self.observeViewedImages(items, thread: id)
+            self.observeAsyncQuestions(items, thread: id)
             self.emit("subagentMessages", ["rootThreadId": root, "agentId": id, "items": items, "prepend": prepend, "hasOlder": more])
         }
         value.onStatus = { [weak self] root, id, status in self?.emit("subagentMessageSync", ["rootThreadId": root, "agentId": id, "status": status]) }
@@ -115,6 +116,7 @@ import Quartz
         value.onItems = { [weak self] id, items in
             guard let self else { return }
             self.observeViewedImages(items, thread: id)
+            self.observeAsyncQuestions(items, thread: id)
             let visible = items.compactMap(Self.displayItem)
             if !visible.isEmpty { self.emit("historyUpdate", ["threadId": id, "items": visible]) }
         }
@@ -141,10 +143,14 @@ import Quartz
     private var resumingThreads = Set<String>()
     private var historyRequests = Set<String>()
     private var questions = PendingQuestionStore()
+    private var asyncQuestions = AsyncQuestionStore()
     private var epoch = UUID()
     private var gatewayConnected = false
     private var activeTurns: [String: String] = [:]
     private var eventRefresh: Task<Void, Never>?
+    private var workspaceWatch: Task<Void, Never>?
+    private var workspaceRefresh: Task<Void, Error>?
+    private var threadListsInFlight: [String: UUID] = [:]
     private let draftStore: DraftStore
     private var draftContexts: [String: ConnectionSettings] = [:]
     private var loadedDraftScope: String?
@@ -180,7 +186,9 @@ import Quartz
             return self.selectedThread == thread && NSApplication.shared.isActive && self.web?.window?.isKeyWindow == true && self.web?.window?.isMiniaturized == false
         }
         questionAttention.navigate = { [weak self] notice in
-            self?.emit("focusQuestion", ["threadId": notice.thread, "token": notice.token])
+            guard let self else { return }
+            let asynchronous = self.asyncQuestions.pending.values.contains { $0.token == notice.token }
+            self.emit(asynchronous ? "focusAsyncQuestion" : "focusQuestion", ["threadId": notice.thread, "token": notice.token])
         }
     }
     func openQuestion(_ token: String) {
@@ -244,6 +252,9 @@ import Quartz
         }
         if operation == "add" {
             var value = settings; value.host = body["host"] as? String ?? ""; value.project = body["path"] as? String ?? ""
+            let generation = epoch
+            value.project = try await attachmentTransport.prepareProjectDirectory(settings: value, create: body["createDirectory"] as? Bool == true)
+            guard generation == epoch else { throw ClientError.message("连接已变化，项目尚未添加；已创建的目录会保留。") }
             let added = try workspaceCatalog.add(value, name: body["name"] as? String)
             workspace = try workspaceCatalog.load(seed: settings); publishWorkspace(); attachmentReply(body, value: ["projectId": added.id]); return
         }
@@ -381,7 +392,7 @@ import Quartz
     private func stopPlan() { planFollower.stop(); planReader.cancelAll() }
     private func stopAgents() { agentMessages.stop(); agentFollower.stop(); agentRoot = nil }
     private func watchPlan(_ id: String) { stopPlan(); if rpc.officialDaemon { planFollower.start(id) } }
-    func runtimeStopped(message: String = "远端常驻已关闭。可在连接设置中重新开启。") { connecting = false; reconnectAllowed = false; recovery.stop(); connected = false; epoch = UUID(); questions.clear(); questionAttention.clear(); goalWatch?.cancel(); follower.stop(); stopPlan(); stopAgents(); writableThreads.removeAll(); activeTurns.removeAll(); rpc.close(); emit("connection", ["status": "error", "message": message] ) }
+    func runtimeStopped(message: String = "远端常驻已关闭。可在连接设置中重新开启。") { stopWorkspaceWatch(); connecting = false; reconnectAllowed = false; recovery.stop(); connected = false; epoch = UUID(); questions.clear(); questionAttention.clear(); asyncQuestions.clear(); goalWatch?.cancel(); follower.stop(); stopPlan(); stopAgents(); writableThreads.removeAll(); activeTurns.removeAll(); rpc.close(); emit("connection", ["status": "error", "message": message] ) }
 
     func emit(_ type: String, _ payload: [String: Any] = [:]) {
         guard let web else { return }
@@ -538,7 +549,8 @@ import Quartz
                     try await projectAction(body)
                 case "threadAction": try await threadAction(body)
                 case "loadThreadPage": try await listThreads(projectID: body["projectId"] as? String, more: true); attachmentReply(body)
-                case "refreshProjectThreads": try await listThreads(projectID: body["projectId"] as? String); attachmentReply(body)
+                case "refreshProjectThreads": try await listThreads(projectID: body["projectId"] as? String, merge: true); attachmentReply(body)
+                case "refreshWorkspace": try await refreshWorkspace(full: true); attachmentReply(body)
                 case "draftSave": try saveDraft(body); attachmentReply(body)
                 case "draftFlushComplete": if let token = body["token"] as? String { flushWaiters.removeValue(forKey: token)?.resume() }
                 case "notificationSettings": openNotificationSettings?()
@@ -568,6 +580,7 @@ import Quartz
                     reply["requestId"] = UUID().uuidString
                     reply["asyncQuestionReply"] = true
                     guard try await send(reply) else { throw ClientError.message("尚未提交回答，请在当前会话可继续时重试。") }
+                    observeAsyncQuestions([["type": "userMessage", "content": [["type": "text", "text": reply["text"] ?? ""]]]], thread: thread)
                     attachmentReply(body, value: ["submitted": true])
                 case "command": try await command(body)
                 case "usageRead":
@@ -683,7 +696,7 @@ import Quartz
     private func connectionLost(_ reason: String) {
         accountReady = false; accountWatch?.cancel(); remoteAccount.disconnected()
         if !connecting { epoch = UUID() }
-        connected = false; rpc.close(); questions.clear(); questionAttention.clear()
+        connected = false; stopWorkspaceWatch(); rpc.close(); questions.clear(); questionAttention.clear(); asyncQuestions.clear()
         goalWatch?.cancel(); attachmentTransport.cancelAll(); follower.stop(); stopPlan(); stopAgents()
         writableThreads.removeAll(); resumingThreads.removeAll(); activeTurns.removeAll(); historyRequests.removeAll()
         emit("connection", ["status": "error", "message": reason])
@@ -712,12 +725,12 @@ import Quartz
         if changed { selectedThread = nil }
         if changed || gatewayChanged { messageRecovery.stop(); gateway.close(); gatewayConnected = false; emit("gateway", ["connected": false, "message": "正在恢复消息连接…"]); emit("conversations", ["conversations": []]) }
         connectionSettings = target; connecting = true
-        epoch = UUID(); let current = epoch
-        defer { if epoch == current { connecting = false } }
+        stopWorkspaceWatch(); threadListsInFlight.removeAll(); epoch = UUID(); let current = epoch
+        defer { if epoch == current { connecting = false; if connected { startWorkspaceWatch() } } }
         await restoreDrafts(target)
         guard current == epoch, !Task.isCancelled else { return false }
         if connectMessages, !gatewayConnected { messageRecovery.start(immediate: true) }
-        questionAttention.clear(); attachmentTransport.cancelAll()
+        questionAttention.clear(); asyncQuestions.clear(); attachmentTransport.cancelAll()
         goalWatch?.cancel(); goalDigests.removeAll(); goalVersions.removeAll(); threadModels.removeAll(); threadEfforts.removeAll(); threadServiceTiers.removeAll(); settingsDigests.removeAll(); settingsVersions.removeAll(); settingsInFlight.removeAll(); modelCatalog.removeAll(); agentParents.removeAll(); agentRoots.removeAll(); modePresets.removeAll()
         stopPlan(); follower.stop(); stopAgents(); selectionEpoch = UUID(); readOnlyLoads.removeAll()
         let restoreThread = selectedThread ?? workspace?.activeID.flatMap { projectSelections[$0] } ?? (rememberSelection ? UserDefaults.standard.string(forKey: selectionKey) : nil)
@@ -814,11 +827,74 @@ import Quartz
             return false
         }
     }
-    private func listThreads(projectID: String? = nil, more: Bool = false) async throws {
+    func refreshWorkspaceSoon() {
+        guard connected, !connecting, !sleeping, !projectActionInFlight, workspaceRefresh == nil else { return }
+        Task { @MainActor [weak self] in try? await self?.refreshWorkspace() }
+    }
+    private func startWorkspaceWatch() {
+        workspaceWatch?.cancel()
+        workspaceWatch = Task { @MainActor [weak self] in
+            try? await self?.refreshWorkspace(full: true)
+            while !Task.isCancelled {
+                do { try await Task.sleep(nanoseconds: NSApplication.shared.isActive ? 15_000_000_000 : 30_000_000_000) } catch { return }
+                guard let self, !Task.isCancelled else { return }
+                try? await self.refreshWorkspace()
+            }
+        }
+    }
+    private func stopWorkspaceWatch() { workspaceWatch?.cancel(); workspaceWatch = nil; workspaceRefresh?.cancel(); workspaceRefresh = nil }
+    func refreshWorkspace(full: Bool = false) async throws {
+        if let workspaceRefresh { try await workspaceRefresh.value; return }
+        guard connected, !connecting, !sleeping, !projectActionInFlight, !remoteAccount.busy, remoteAccount.login == nil, threadListsInFlight.isEmpty else { return }
+        let generation = epoch, target = settings
+        let task = Task { @MainActor [weak self] in
+            guard let self else { throw CancellationError() }
+            self.emit("workspaceSync", ["status": "loading"])
+            do {
+                var rows: [[String: Any]] = [], cursor: String?, seen = Set<String>()
+                for _ in 0..<(full ? 10 : 1) {
+                    var params: [String: Any] = ["limit": 100, "sortKey": "updated_at", "sourceKinds": ["cli", "vscode", "appServer", "exec"], "useStateDbOnly": true]
+                    if let cursor { params["cursor"] = cursor }
+                    let page = try await self.rpc.request("thread/list", params: params)
+                    try Task.checkCancellation()
+                    guard generation == self.epoch, WorkspaceCatalog.sameServer(self.settings, target), !self.projectActionInFlight else { throw CancellationError() }
+                    rows += (page["data"] as? [[String: Any]] ?? []).filter { SessionSettings.parent($0) == nil }
+                    cursor = page["nextCursor"] as? String
+                    guard let cursor, seen.insert(cursor).inserted else { break }
+                }
+                let old = self.workspace?.projects ?? [], active = self.workspace?.activeID
+                self.workspace = try self.workspaceCatalog.discover(rows, settings: target)
+                // Catalog selection may have changed in another window. Discovery
+                // must never move this window away from its current project.
+                if let active, self.workspace?.projects.contains(where: { $0.id == active }) == true { self.workspace?.activeID = active }
+                else { self.workspace?.activeID = nil }
+                if self.workspace?.projects != old { self.publishWorkspace() }
+                for project in self.workspace?.projects ?? [] where WorkspaceCatalog.sameServer(project.settings, target) && project.id != self.workspace?.activeID {
+                    let matches = rows.filter { ($0["cwd"] as? String).map { WorkspaceCatalog.sameDirectory($0, project.settings.project) } == true }
+                    if !matches.isEmpty { self.emit("threads", ["projectId": project.id, "threads": matches, "merge": true, "nextCursor": self.threadPages[project.id] as Any? ?? NSNull()]) }
+                }
+                try await self.listThreads(merge: true)
+                guard generation == self.epoch else { throw CancellationError() }
+                self.emit("workspaceSync", ["status": "ready"])
+            } catch {
+                if generation == self.epoch {
+                    self.emit("workspaceSync", error is CancellationError ? ["status": "idle"] : ["status": "error", "message": "项目和会话同步暂时失败，已有列表与草稿保留，可点刷新重试。"])
+                }
+                throw error
+            }
+        }
+        workspaceRefresh = task
+        defer { if generation == epoch { workspaceRefresh = nil } }
+        try await task.value
+    }
+    private func listThreads(projectID: String? = nil, more: Bool = false, merge: Bool = false) async throws {
         let id = projectID ?? workspace?.activeID
         let profile = workspace?.projects.first(where: { $0.id == id })
         let target = profile?.settings ?? settings, generation = epoch, version = UUID(), key = id ?? "current"
         guard WorkspaceCatalog.sameServer(settings, target) else { throw ClientError.message("请先打开此项目再加载会话。") }
+        guard threadListsInFlight[key] == nil else { return }
+        threadListsInFlight[key] = version
+        defer { if threadListsInFlight[key] == version { threadListsInFlight.removeValue(forKey: key) } }
         var params: [String: Any] = ["limit": 80, "sortKey": "updated_at", "sourceKinds": ["cli", "vscode", "appServer", "exec"], "cwd": target.project, "useStateDbOnly": true]
         if more { guard let cursor = threadPages[key] else { return }; params["cursor"] = cursor }
         threadPageVersions[key] = version
@@ -836,9 +912,9 @@ import Quartz
                 }
             }
             guard generation == epoch, threadPageVersions[key] == version else { return }
-            threadPages[key] = result["nextCursor"] as? String
+            if !merge || threadPages[key] == nil { threadPages[key] = result["nextCursor"] as? String }
             for row in rows { if let thread = row["id"] as? String { knownProjectThreads[key, default: [:]][thread] = row } }
-            emit("threads", ["threads": rows, "projectId": id as Any? ?? NSNull(), "project": target.project, "append": more, "nextCursor": result["nextCursor"] ?? NSNull()])
+            emit("threads", ["threads": rows, "projectId": id as Any? ?? NSNull(), "project": target.project, "append": more, "merge": merge, "nextCursor": threadPages[key] as Any? ?? NSNull()])
         } catch {
             guard generation == epoch, threadPageVersions[key] == version else { return }
             emit("threadListState", ["projectId": id as Any? ?? NSNull(), "status": "error", "message": "会话列表暂时无法读取，可重试。已有会话和草稿仍保留。"])
@@ -1005,6 +1081,7 @@ import Quartz
             if runVersion == runVersions[id, default: 0], let latest = (page["data"] as? [[String: Any]])?.first { emit("runSnapshot", ["threadId": id, "turn": RunPresentation.turn(latest)]) }
             for turn in page["data"] as? [[String: Any]] ?? [] {
                 let items = turn["items"] as? [[String: Any]] ?? []
+                observeAsyncQuestions(items, thread: id)
                 for (index, original) in items.enumerated() where ["commandExecution", "reasoning"].contains(original["type"] as? String ?? "") {
                     var item = original
                     if item["type"] as? String == "commandExecution" { item["observedAtMs"] = Date().timeIntervalSince1970 * 1000 }
@@ -1087,6 +1164,7 @@ import Quartz
         }
         follower.observe(id, items: rawItems)
         observeViewedImages(rawItems, thread: id)
+        observeAsyncQuestions(rawItems, thread: id)
         let items = rawItems.compactMap(Self.displayItem)
         emit("history", ["threadId": id, "items": items, "prepend": cursor != nil, "nextCursor": result["nextCursor"] ?? NSNull()])
     }
@@ -1281,7 +1359,7 @@ import Quartz
                 item["status"] = method == "item/started" ? "inProgress" : "completed"
                 observeViewedImages([item], thread: thread); value["item"] = Self.displayItem(item)
             }
-            if let item = value["item"] as? [String: Any], let safe = Self.displayItem(item) { value["item"] = safe; emit("item", value) }
+            if let item = value["item"] as? [String: Any], let safe = Self.displayItem(item) { observeAsyncQuestions([safe], thread: thread); value["item"] = safe; emit("item", value) }
         case "item/reasoning/summaryTextDelta", "item/reasoning/summaryPartAdded":
             runVersions[thread, default: 0] += 1
             var value = params.filter { ["threadId", "turnId", "itemId", "summaryIndex", "delta"].contains($0.key) }
@@ -1294,7 +1372,7 @@ import Quartz
             if let id = params["requestId"], let token = questions.resolve(id) { questionAttention.resolve(token); emit("approvalAnswered", ["token": token]) }
         case "thread/settings/updated": if let value = params["threadSettings"] as? [String: Any] { publishSettings(thread, value: value) }
         case "thread/status/changed": emit("threadStatus", params)
-        case "thread/name/updated": Task { try? await self.listThreads() }
+        case "thread/started", "thread/name/updated": refreshWorkspaceSoon()
         case "error":
             runVersions[thread, default: 0] += 1
             emit("runError", ["error": RunPresentation.error(params["error"] as? [String: Any] ?? [:]), "threadId": thread, "turnId": params["turnId"] ?? "", "willRetry": params["willRetry"] as? Bool ?? false])
@@ -1347,6 +1425,17 @@ import Quartz
         agentRoot = root
         emit("agentContext", ["threadId": id, "rootThreadId": root, "parentThreadId": SessionSettings.parent(thread) as Any? ?? NSNull()])
         agentFollower.start(root)
+    }
+    func observeAsyncQuestions(_ items: [[String: Any]], thread: String) {
+        guard !thread.isEmpty else { return }
+        let before = asyncQuestions.entries(thread: thread)
+        asyncQuestions.observe(items, thread: thread)
+        let after = asyncQuestions.entries(thread: thread), tokens = Set(after.map(\.token))
+        for entry in before where !tokens.contains(entry.token) { questionAttention.resolve(entry.token) }
+        for entry in after { questionAttention.receive(.init(token: entry.token, thread: thread, sourceThread: thread, isQuestion: true)) }
+        let old = try? JSONSerialization.data(withJSONObject: before.map(\.snapshot), options: .sortedKeys)
+        let new = try? JSONSerialization.data(withJSONObject: after.map(\.snapshot), options: .sortedKeys)
+        if old != new { emit("asyncQuestions", ["threadId": thread, "questions": after.map(\.snapshot)]) }
     }
     private func ownsRequestThread(_ id: String) -> Bool { rpc.controlledThreads.contains(id) && (writableThreads.contains(id) || resumingThreads.contains(id)) }
     private func requestOwner(_ id: String) async -> String? {
@@ -1451,7 +1540,7 @@ import Quartz
         } catch { fputs("diagnostic failed: \(error.localizedDescription)\n", stderr) }
         close()
     }
-    func close() { localMCP.close(); accountReady = false; accountWatch?.cancel(); remoteAccount.disconnected(); connecting = false; reconnectAllowed = false; messageReconnectAllowed = false; recovery.stop(); messageRecovery.stop(); connected = false; epoch = UUID(); questions.clear(); questionAttention.clear(); goalWatch?.cancel(); follower.stop(); stopPlan(); stopAgents(); eventRefresh?.cancel(); previewPanel?.close(); attachmentTransport.cancelAll(); attachments.close(); messageMediaCache.close(); gateway.close(); rpc.close(); flushWaiters.values.forEach { $0.resume() }; flushWaiters.removeAll() }
+    func close() { stopWorkspaceWatch(); localMCP.close(); accountReady = false; accountWatch?.cancel(); remoteAccount.disconnected(); connecting = false; reconnectAllowed = false; messageReconnectAllowed = false; recovery.stop(); messageRecovery.stop(); connected = false; epoch = UUID(); questions.clear(); questionAttention.clear(); asyncQuestions.clear(); goalWatch?.cancel(); follower.stop(); stopPlan(); stopAgents(); eventRefresh?.cancel(); previewPanel?.close(); attachmentTransport.cancelAll(); attachments.close(); messageMediaCache.close(); gateway.close(); rpc.close(); flushWaiters.values.forEach { $0.resume() }; flushWaiters.removeAll() }
     static func icons() -> [String: String] {
         let symbols = ["zap":"bolt.fill", "target":"scope", "list-checks":"checklist", "panel-left":"sidebar.left", "panel-right":"sidebar.right", "square-pen":"square.and.pencil", "folder":"folder", "chevron-down":"chevron.down", "chevron-right":"chevron.right", "chevrons-up-down":"chevron.up.chevron.down", "settings-2":"slider.horizontal.3", "server":"server.rack", "git-branch":"point.3.connected.trianglepath.dotted", "file-code-2":"doc.text", "file-text":"doc.text", "image":"photo", "check":"checkmark", "copy":"doc.on.doc", "thumbs-up":"hand.thumbsup", "thumbs-down":"hand.thumbsdown", "plus":"plus", "arrow-up":"arrow.up", "x":"xmark", "quote":"quote.opening", "message-circle":"message", "send":"paperplane", "corner-up-left":"arrowshape.turn.up.left", "users":"person.2", "user-round":"person", "terminal":"terminal"]
         var result: [String: String] = [:]

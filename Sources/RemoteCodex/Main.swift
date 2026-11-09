@@ -185,7 +185,7 @@ enum AppResources {
     private func publishMessageVisibility() { coordinator?.emit("messageVisibility", ["active": NSApplication.shared.isActive && window?.isVisible == true && window?.isMiniaturized != true]) }
     func windowDidMiniaturize(_ notification: Notification) { coordinator?.emit("messageVisibility", ["active": false]) }
     func windowDidDeminiaturize(_ notification: Notification) { publishMessageVisibility() }
-    func applicationDidBecomeActive(_ notification: Notification) { publishMessageVisibility(); Task { await questionNotifications?.refreshPermission() } }
+    func applicationDidBecomeActive(_ notification: Notification) { publishMessageVisibility(); coordinator?.refreshWorkspaceSoon(); Task { await questionNotifications?.refreshPermission() } }
     func applicationDidResignActive(_ notification: Notification) { coordinator?.emit("messageVisibility", ["active": false]) }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 }

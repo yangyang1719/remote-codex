@@ -12,6 +12,7 @@ struct WorkspaceState: Codable {
     var activeID: String?
     var pinned: [String: Set<String>] = [:]
     var archived: [String: Set<String>] = [:]
+    var dismissedDiscoveries: Set<String>?
 }
 
 /// Local navigation only. Removing/archiving entries never modifies remote files or tasks.
@@ -43,9 +44,22 @@ final class WorkspaceCatalog {
         try settings.validate()
         let title = try Self.title(name?.isEmpty == false ? name! : Self.defaultName(settings))
         return try transaction { state, _ in
-            if let existing = state.projects.first(where: { DraftStore.scope($0.settings) == DraftStore.scope(settings) }) { return existing }
+            state.dismissedDiscoveries?.remove(DraftStore.scope(settings))
+            if let existing = state.projects.first(where: { Self.sameServer($0.settings, settings) && Self.sameDirectory($0.settings.project, settings.project) }) { return existing }
             let project = WorkspaceProject(id: UUID().uuidString, name: title, settings: settings)
             state.projects.append(project); return project
+        }
+    }
+    func discover(_ threads: [[String: Any]], settings: ConnectionSettings) throws -> WorkspaceState {
+        try transaction { state, _ in
+            for thread in threads where SessionSettings.parent(thread) == nil {
+                guard let path = thread["cwd"] as? String, path.hasPrefix("/"), !path.contains("\0"), !path.contains("\n") else { continue }
+                var target = settings; target.project = (path as NSString).standardizingPath
+                guard !(state.dismissedDiscoveries ?? []).contains(DraftStore.scope(target)),
+                      !state.projects.contains(where: { Self.sameServer($0.settings, target) && Self.sameDirectory($0.settings.project, target.project) }) else { continue }
+                state.projects.append(.init(id: UUID().uuidString, name: Self.defaultName(target), settings: target))
+            }
+            return state
         }
     }
     func update(_ id: String, operation: String, name: String? = nil, flag: Bool? = nil, thread: String? = nil) throws -> WorkspaceState {
@@ -55,7 +69,9 @@ final class WorkspaceCatalog {
             case "select": state.activeID = id; state.projects[index].collapsed = false
             case "rename": state.projects[index].name = try Self.title(name ?? "")
             case "collapse": state.projects[index].collapsed = flag ?? false
-            case "remove": state.projects.remove(at: index); state.pinned.removeValue(forKey: id); state.archived.removeValue(forKey: id); if state.activeID == id { state.activeID = state.projects.first?.id }
+            case "remove":
+                state.dismissedDiscoveries = (state.dismissedDiscoveries ?? []).union([DraftStore.scope(state.projects[index].settings)])
+                state.projects.remove(at: index); state.pinned.removeValue(forKey: id); state.archived.removeValue(forKey: id); if state.activeID == id { state.activeID = state.projects.first?.id }
             case "pin", "archive":
                 guard let thread, !thread.isEmpty, thread.utf8.count < 256 else { throw ClientError.message("会话标识无效。") }
                 if operation == "pin" { if flag == true { state.pinned[id, default: []].insert(thread) } else { state.pinned[id]?.remove(thread) } }

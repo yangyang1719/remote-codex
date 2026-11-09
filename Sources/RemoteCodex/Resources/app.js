@@ -19,7 +19,7 @@
   function attachmentRequest(action, data) {
     if (state.demo) return Promise.reject(new Error('请在实际客户端中添加附件。'));
     const bridgeId = crypto.randomUUID();
-    return new Promise((resolve, reject) => { const timer = setTimeout(() => { bridgeRequests.delete(bridgeId); reject(new Error(action === 'usageRead' ? '查询用量超时，请稍后刷新。' : '操作结果未确认，请先查看最新记录。')); }, action === 'localMCP' ? 180000 : (['answerAsyncQuestion','projectAction','threadAction','loadThreadPage','refreshProjectThreads','usageRead'].includes(action) || action.startsWith('messageMedia') || action.startsWith('whatsappLink') || action.startsWith('viewedImage')) ? 120000 : 30000); bridgeRequests.set(bridgeId, { resolve, reject, timer }); post(action, { ...data, bridgeId }); });
+    return new Promise((resolve, reject) => { const timer = setTimeout(() => { bridgeRequests.delete(bridgeId); reject(new Error(action === 'usageRead' ? '查询用量超时，请稍后刷新。' : '操作结果未确认，请先查看最新记录。')); }, action === 'localMCP' ? 180000 : (['answerAsyncQuestion','projectAction','threadAction','loadThreadPage','refreshProjectThreads','refreshWorkspace','usageRead'].includes(action) || action.startsWith('messageMedia') || action.startsWith('whatsappLink') || action.startsWith('viewedImage')) ? 120000 : 30000); bridgeRequests.set(bridgeId, { resolve, reject, timer }); post(action, { ...data, bridgeId }); });
   }
   const viewedImages = window.RemoteCodexViewedImages({ state, make, icon, request: attachmentRequest });
   const attachmentRows = () => state.attachments[key()] || [];
@@ -335,6 +335,7 @@
     if (q('#attachment-add')) { q('#attachment-add').disabled = !!state.sendPending || !!state.commandPending; q('#attachment-list').querySelectorAll('.attachment-remove').forEach(button => button.disabled = !!state.sendPending || !!state.commandPending); }
     q('#cmsg-input').disabled = !!state.workspaceEmpty; q('#cmsg-input').placeholder = mode === 'busy' ? '可先写草稿，稍后点击“继续此会话”重试…' : '继续提问，或从右侧引用消息…';
     renderQuote();
+    asyncQuestions?.renderPanel();
     accessBanner();
     commands?.render();
     session?.controls();
@@ -351,7 +352,7 @@
     if (workspaceNavigation?.render()) return;
     const list = q('#app-thread-list'); list.replaceChildren();
     const project = make('div', 'project'); project.append(icon('chevron-down'), icon('folder'), document.createTextNode(state.project.split('/').pop() || '远端项目')); list.append(project);
-    for (const thread of state.threads.filter(t => !t.parentThreadId)) { const button = make('button', 'session cursor-interaction' + (thread.id === state.active ? ' active' : ''), thread.name || thread.preview?.slice(0, 28) || '未命名会话'); button.type = 'button'; button.dataset.threadId = thread.id; const count = state.approvals.filter(a => a.params.threadId === thread.id || a.ownerThreadId === thread.id).length; if (count) button.append(make('span', 'question-badge', `待回答 ${count}`)); button.onclick = () => selectConversation(thread.id); list.append(button); }
+    for (const thread of state.threads.filter(t => !t.parentThreadId)) { const button = make('button', 'session cursor-interaction' + (thread.id === state.active ? ' active' : ''), thread.name || thread.preview?.slice(0, 28) || '未命名会话'); button.type = 'button'; button.dataset.threadId = thread.id; const count = state.approvals.filter(a => a.params.threadId === thread.id || a.ownerThreadId === thread.id).length + (state.asyncQuestions?.[thread.id]?.length || 0); if (count) button.append(make('span', 'question-badge', `待回答 ${count}`)); button.onclick = () => selectConversation(thread.id); list.append(button); }
     if (!state.threads.length) list.append(make('div', 'session inactive', state.connected ? '暂无远端会话' : '连接后显示会话'));
     icons();
   }
@@ -447,6 +448,7 @@
     drafts?.receive(event);
     workspaceNavigation?.receive(event);
     messageMedia?.receive(event);
+    asyncQuestions?.receive(event);
     switch (event.type) {
       case 'reconnecting': banner(event.delay ? `连接已断开，${event.delay} 秒后自动重连…` : '正在恢复连接…', [{ label: '立即重连', run: () => post('reconnect') }]); break;
       case 'draftError': attachmentNote(event.message); break;
@@ -459,11 +461,16 @@
         state.explicitQuestionFocus = { token: event.token, threadId: event.threadId };
         selectConversation(event.threadId); renderTranscript(); break;
       }
+      case 'asyncQuestions': renderThreads(); renderControls(); renderTranscript(); break;
+      case 'focusAsyncQuestion': {
+        if (!(state.asyncQuestions[event.threadId] || []).some(row => row.token === event.token)) { banner('这个问题已处理，请查看最新回复。'); break; }
+        selectConversation(event.threadId); asyncQuestions.focus(event.token); renderControls(); break;
+      }
       case 'questionUnavailable': banner(event.message); break;
       case 'attachmentReply': { const pending = bridgeRequests.get(event.bridgeId); if (pending) { clearTimeout(pending.timer); bridgeRequests.delete(event.bridgeId); if (event.ok) pending.resolve(event.value); else pending.reject(new Error(event.message)); } break; }
       case 'attachmentProgress': { const draftKey = state.sendPending?.key === event.draftKey ? state.sendPending.threadId || event.draftKey : event.draftKey; const row = (state.attachments[draftKey] || []).find(file => file.id === event.id); if (row) Object.assign(row, event); if (event.path && event.thumbnail) state.remotePreviews[event.path] = event.thumbnail; if (key() === draftKey) renderAttachments(); break; }
       case 'connection': state.connected = event.status === 'connected'; if (!state.connected) { if (state.sendPending) { state.uncertainSend = true; state.sendPending = null; for (const rows of Object.values(state.attachments)) for (const row of rows) if (['uploading', 'uploaded'].includes(row.status)) row.status = 'ready'; } state.loading = false; state.access = {}; state.running = {}; state.historyLoading = {}; state.sync = {}; state.approvals = []; } state.host = event.host || state.host; state.project = event.project || state.project; q('.chrome-end').textContent = state.host + ' · 远程工作区'; q('.account').replaceChildren(icon('server'), make('span', '', state.host + (state.connected ? ' · 已连接' : ' · 未连接'))); renderThreads(); renderTranscript(); if (event.status === 'connecting') banner('正在通过 SSH 连接远端 Codex…'); else if (!state.connected) banner(event.message || '', event.status === 'error' ? [{ label: '重连', run: () => post('reconnect') }] : [], 'error'); break;
-      case 'threads': if (event.projectId && workspaceNavigation?.currentProject() !== event.projectId) break; state.threads = uniqueThreads(event.append ? [...state.threads, ...(event.threads || [])] : event.threads || []); renderThreads(); renderControls(); break;
+      case 'threads': if (event.projectId && workspaceNavigation?.currentProject() !== event.projectId) break; state.threads = uniqueThreads(event.merge ? [...(event.threads || []), ...state.threads] : event.append ? [...state.threads, ...(event.threads || [])] : event.threads || []); renderThreads(); renderControls(); break;
       case 'threadManaged': if (!event.projectId || event.projectId === workspaceNavigation?.currentProject()) { const i = state.threads.findIndex(t => t.id === event.thread.id); if (i < 0) state.threads.unshift(event.thread); else state.threads[i] = event.thread; renderThreads(); renderControls(); } break;
       case 'projectOpened': state.active = null; state.loading = false; state.host = event.host || state.host; state.project = event.project || state.project; restoreCodexDraft(); renderThreads(); renderTranscript(); renderConversation(); break;
       case 'loadingThread': state.loading = true; break;
@@ -528,8 +535,9 @@
   const questionAlerts = make('div', 'question-alerts'); questionAlerts.id = 'question-alerts'; questionAlerts.hidden = true; questionAlerts.setAttribute('aria-live', 'polite'); appBanner.after(questionAlerts);
   function renderQuestionAlerts() {
     if (!questionAlerts) return;
-    const pending = state.approvals.filter(a => a.params.threadId !== state.active && a.ownerThreadId !== state.active);
-    const denied = state.approvals.length && ['denied', 'error'].includes(state.notificationPermission);
+    const pending = [...state.approvals.filter(a => a.params.threadId !== state.active && a.ownerThreadId !== state.active),
+      ...Object.entries(state.asyncQuestions || {}).filter(([thread]) => thread !== state.active).flatMap(([thread, rows]) => rows.map(row => ({ token: row.token, method: 'async/requestUserInput', params: { threadId: thread } })))];
+    const denied = (state.approvals.length || Object.values(state.asyncQuestions || {}).some(rows => rows.length)) && ['denied', 'error'].includes(state.notificationPermission);
     const nodes = pending.map(a => {
       const threadId = a.ownerThreadId || a.params.threadId, thread = state.threads.find(t => t.id === threadId);
       const button = make('button', 'question-alert cursor-interaction'); button.type = 'button'; button.dataset.token = a.token;
