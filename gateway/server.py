@@ -169,13 +169,17 @@ class Provider:
     def __init__(self, config, store, events):
         self.account = config['id']
         self.platform = config['platform']
+        ignored = config.get('ignoredConversationIds', [])
+        if not isinstance(ignored, list) or any(not isinstance(item, str) or not item.strip() for item in ignored):
+            raise ValueError('ignoredConversationIds must be a list of non-empty platform ID strings')
+        self.ignored_conversations = frozenset(ignored) if self.platform == 'telegram' else frozenset()
         self.store, self.events = store, events
         self.pending = {}
         self.lock = threading.Lock()
         self.status = 'starting'
         self.proc = subprocess.Popen(config['command'], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                      stderr=subprocess.DEVNULL, text=True, bufsize=1,
-                                     env={**os.environ, **config.get('environment', {}), 'WHATSAPP_MEDIA_DIR': str(store.media.root), 'WHATSAPP_AUTOCONNECT_MARKER': str(store.media.root.parent/'whatsapp-linked')})
+                                     env={**os.environ, **config.get('environment', {}), 'WHATSAPP_MEDIA_DIR': str(store.media.root), 'WHATSAPP_AUTOCONNECT_MARKER': str(store.media.root.parent/'whatsapp-linked'), 'TELEGRAM_IGNORED_CONVERSATIONS': json.dumps(sorted(self.ignored_conversations))})
         threading.Thread(target=self.read, daemon=True).start()
 
     def read(self):
@@ -194,6 +198,9 @@ class Provider:
                     self.status = 'connected'
                     self.events.publish({'type': 'providerStatus', 'platform': self.platform, 'status': self.status})
                 elif value.get('type') in ('conversation', 'message', 'messageUpdate'):
+                    # Filter before any database/media write or client notification.
+                    if str(value['conversation']['externalId']) in self.ignored_conversations:
+                        continue
                     cid = self.store.conversation(self.account, self.platform, value['conversation'])
                     if value['type'] == 'message':
                         self.store.ingest(cid, value['message'])
@@ -201,6 +208,8 @@ class Provider:
                         self.store.patch(cid, value['message'])
                     self.events.publish({'type': value['type'], 'conversationId': cid})
                 elif value.get('type') == 'status':
+                    if self.platform == 'telegram' and isinstance(value.get('ignoredConversationIds'), list):
+                        self.ignored_conversations = frozenset(str(x) for x in value['ignoredConversationIds'])
                     self.status = value.get('status', 'disconnected')
                     self.events.publish({'type': 'providerStatus', 'platform': self.platform, 'status': self.status})
         except (ValueError, OSError, KeyError):
@@ -258,6 +267,19 @@ class Gateway:
         if provider is None:
             raise RuntimeError('WhatsApp 独立服务未配置。')
         return provider.call(method, params, timeout=75)
+
+    def telegram(self, method, params=None):
+        allowed = {'status', 'startQR', 'sendCode', 'signIn', 'password', 'setIgnored'}
+        if method not in allowed:
+            raise ValueError('Telegram method not allowed')
+        providers = [p for p in self.providers.values() if p.platform == 'telegram']
+        if len(providers) != 1:
+            raise RuntimeError('请配置一个 Telegram 账号服务。')
+        provider = providers[0]
+        result = provider.call(method, params, timeout=75)
+        if 'ignoredConversationIds' in result:
+            provider.ignored_conversations = frozenset(result['ignoredConversationIds'])
+        return result
 
     def send(self, body):
         cid, text, key = body.get('conversationId'), body.get('text'), body.get('idempotencyKey')
@@ -350,6 +372,13 @@ def handler(gateway):
                 except ValueError:
                     return self.json(400, {'error': 'Invalid history cursor'})
                 return self.json(200, gateway.store.message_snapshot(cid, before))
+            if parsed.path == '/telegram/auth':
+                if self.headers.get('X-Remote-Codex') != 'desktop':
+                    return self.json(403, {'error': 'Telegram login is desktop-only'})
+                try:
+                    return self.json(200, gateway.telegram('status'))
+                except Exception:
+                    return self.json(503, {'error': 'Telegram 账号服务未配置或不可用。'})
             if parsed.path == '/whatsapp/status':
                 try:
                     return self.json(200, gateway.whatsapp('status'))
@@ -402,6 +431,10 @@ def handler(gateway):
                     if parsed.path == '/routing/send-status':
                         return self.json(200, gateway.routes.send_status(body))
                     return self.json(404, {'error': 'Unknown routing operation'})
+                if parsed.path == '/telegram/auth':
+                    if self.headers.get('X-Remote-Codex') != 'desktop':
+                        return self.json(403, {'error': 'Telegram login is desktop-only'})
+                    return self.json(200, gateway.telegram(body.get('method'), body.get('params', {})))
                 if self.path == '/whatsapp/auth':
                     if body.get('mode') not in ('qr', 'phone'):
                         raise ValueError('关联方式无效。')

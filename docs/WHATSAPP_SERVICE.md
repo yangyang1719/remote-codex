@@ -24,6 +24,10 @@ python3 gateway/server.py --state "$HOME/.local/state/remote-codex" --config /pa
 
 为 worker 使用 `flock` 或等价单实例保护，确保旧插件和新服务不同时打开同一 session。新账号从桌面扫码或电话号码关联；迁移已有 session 前须自行备份并协调旧连接退出。凭据、数据库和媒体应位于源码目录之外，目录权限 0700，文件权限 0600。
 
+### Telegram 忽略名单
+
+Telegram 的初始忽略名单可配置在 provider 的 `ignoredConversationIds` 中，按平台原始聊天 ID 和账号隔离。桌面保存后立即生效并以远程持久名单为准。worker 在拉历史和下载媒体前过滤，网关在消息入库前再次过滤；已有记录保留，WhatsApp 不受影响。只有正常同步和忽略两种状态。详情及限制见 [Telegram 服务](TELEGRAM_SERVICE.md)。
+
 用自己选择的服务管理器托管网关。启动、停止及回退应只针对该消息服务，不重启 Codex 或其他业务服务。不要用旧数据库或凭据备份覆盖运行中的新数据。
 
 ## API

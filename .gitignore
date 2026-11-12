@@ -47,3 +47,9 @@ creds.json
 /scripts/deploy-*.py
 /scripts/verify-*.py
 /scripts/remote-whatsapp-admin.py
+
+# Telegram account sessions.
+*.session
+*.session-journal
+*.session-wal
+*.session-shm

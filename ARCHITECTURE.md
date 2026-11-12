@@ -27,7 +27,7 @@ macOS AppKit / WebKit
 
 ## 消息边界
 
-消息服务独立持有账号连接、接收和存储消息，Mac 与 MCP 访问同一网关。网关只监听回环地址，通过 SSH 转发使用。Telegram 尚未部署账号服务，不回退到 WhatsApp。
+消息服务独立持有账号连接、接收和存储消息，Mac 与 MCP 访问同一网关。网关只监听回环地址，通过 SSH 转发使用。Telegram worker 已提供独立实现，尚未进行远程部署或真实账号验收，不回退到 WhatsApp。详见 [Telegram 服务](docs/TELEGRAM_SERVICE.md)。
 
 引用只选择一条消息，用户仍可编辑后发送。MCP 路由绑定真实 Codex 会话和回合、平台、账号及收件人；收到的内容不能提供发送授权。准备后的收件人和内容固定，发送结果未知不自动重发。详情见 [消息路由](docs/MESSAGE_ROUTING.md)。
 

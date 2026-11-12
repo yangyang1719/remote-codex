@@ -19,7 +19,7 @@
   function attachmentRequest(action, data) {
     if (state.demo) return Promise.reject(new Error('请在实际客户端中添加附件。'));
     const bridgeId = crypto.randomUUID();
-    return new Promise((resolve, reject) => { const timer = setTimeout(() => { bridgeRequests.delete(bridgeId); reject(new Error(action === 'usageRead' ? '查询用量超时，请稍后刷新。' : '操作结果未确认，请先查看最新记录。')); }, action === 'localMCP' ? 180000 : (['answerAsyncQuestion','projectAction','threadAction','loadThreadPage','refreshProjectThreads','refreshWorkspace','usageRead'].includes(action) || action.startsWith('messageMedia') || action.startsWith('whatsappLink') || action.startsWith('viewedImage')) ? 120000 : 30000); bridgeRequests.set(bridgeId, { resolve, reject, timer }); post(action, { ...data, bridgeId }); });
+    return new Promise((resolve, reject) => { const timer = setTimeout(() => { bridgeRequests.delete(bridgeId); reject(new Error(action === 'usageRead' ? '查询用量超时，请稍后刷新。' : '操作结果未确认，请先查看最新记录。')); }, action === 'localMCP' ? 180000 : (['answerAsyncQuestion','projectAction','threadAction','loadThreadPage','refreshProjectThreads','refreshWorkspace','usageRead'].includes(action) || action.startsWith('messageMedia') || action.startsWith('whatsappLink') || action.startsWith('telegram') || action.startsWith('viewedImage')) ? 120000 : 30000); bridgeRequests.set(bridgeId, { resolve, reject, timer }); post(action, { ...data, bridgeId }); });
   }
   const viewedImages = window.RemoteCodexViewedImages({ state, make, icon, request: attachmentRequest });
   const attachmentRows = () => state.attachments[key()] || [];
@@ -621,6 +621,7 @@
   q('#cmsg-reply').oninput = saveReplyDraft;
   q('#cmsg-reply-cancel').onclick = () => { if (!state.pendingReply?.sending) { cancelReply(); messageMedia?.renderDraft(); } };
   asyncQuestions = window.RemoteCodexAsyncQuestions({ state, make, request: attachmentRequest, selection: () => ({ platform: state.platform, conversationId: current()?.id || null }), changed: renderControls });
+  window.RemoteCodexTelegramLink({ root, q, make, state, request: attachmentRequest, post });
   whatsappLink = window.RemoteCodexWhatsAppLink({ root, q, make, state, request: attachmentRequest, post });
   messageMedia = window.RemoteCodexMessageMedia({ state, root, q, make, icon, request: attachmentRequest, post, current, key, drafts: () => drafts, quoteMessage, quotedMessage, quoteCount: () => quoteRows().length, renderAttachments, renderControls, renderConversation, cancelReply });
   appearance = window.RemoteCodexAppearance({ root, make });

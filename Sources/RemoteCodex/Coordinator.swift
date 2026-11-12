@@ -661,6 +661,16 @@ import Quartz
                     if let id = body["conversationId"] as? String { let encoded = id.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed.subtracting(CharacterSet(charactersIn: "+&=?#"))) ?? ""; var result = try await gateway.request("/messages?conversation_id=" + encoded); result["conversationId"] = id; emit("messages", result) }
                 case "messageMediaLoad", "messageMediaPreview", "messageMediaSave", "messageMediaQuote":
                     try await messageMediaAction(action, body: body)
+                case "telegramStatus", "telegramCall":
+                    let host = settings.host, port = settings.gatewayPort
+                    let result: [String: Any]
+                    if action == "telegramCall" {
+                        guard let method = body["method"] as? String,
+                              ["startQR", "sendCode", "signIn", "password", "setIgnored"].contains(method) else { throw ClientError.message("Telegram 操作无效。") }
+                        result = try await gateway.request("/telegram/auth", method: "POST", body: ["method": method, "params": body["params"] as? [String: Any] ?? [:]], timeout: 90)
+                    } else { result = try await gateway.request("/telegram/auth", timeout: 15) }
+                    guard settings.host == host, settings.gatewayPort == port else { throw CancellationError() }
+                    attachmentReply(body, value: result)
                 case "whatsappLinkStatus", "whatsappLinkStart":
                     let host = settings.host, port = settings.gatewayPort
                     let result: [String: Any]

@@ -401,6 +401,6 @@ def scaled_fonts(value):
 source, css = scaled_fonts(source), scaled_fonts(css)
 head = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src \'none\'; script-src \'self\'; style-src \'self\' \'unsafe-inline\'; img-src \'self\' data: remote-codex-media:; media-src remote-codex-media:; connect-src \'none\'; object-src \'none\'; frame-src \'none\'; base-uri \'none\'"></head><body>'
 destination = root / 'Sources/RemoteCodex/Resources/index.html'
-scripts = ['transcript', 'subagents', 'session', 'usage', 'commands', 'message-quotes', 'drafts', 'projects', 'message-media', 'whatsapp-link', 'message-format', 'split-layout', 'appearance', 'inbox', 'async-questions', 'viewed-images', 'remote-account', 'run-state', 'local-mcp', 'app']
+scripts = ['transcript', 'subagents', 'session', 'usage', 'commands', 'message-quotes', 'drafts', 'projects', 'message-media', 'whatsapp-link', 'telegram-link', 'message-format', 'split-layout', 'appearance', 'inbox', 'async-questions', 'viewed-images', 'remote-account', 'run-state', 'local-mcp', 'app']
 destination.write_text(head + source + css + ''.join(f'<script src="{name}.js"></script>' for name in scripts) + '</body></html>')
 print(destination)

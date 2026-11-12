@@ -109,7 +109,7 @@ class MediaStore:
                 conversation = self.store.get_conversation(row['conversation_id'])
                 provider = providers.get(conversation['accountId']) if conversation else None
                 if not provider or provider.status != 'connected':
-                    raise RuntimeError('WhatsApp 尚未连接，请先重新关联设备。')
+                    raise RuntimeError('消息账号尚未连接，请先登录。')
                 result = provider.call('downloadMedia', {'id': ident, 'source': row['source'], 'externalId': conversation['externalId'], 'messageId': message['platformMessageId']}, timeout=100)
                 size, digest = int(result['size']), result['sha256']
                 target = self.path(ident)
