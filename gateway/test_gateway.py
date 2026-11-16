@@ -1,7 +1,7 @@
 import tempfile
 import unittest
 from pathlib import Path
-from server import Gateway
+from server import Gateway, Provider
 from mcp_server import TOOLS
 
 
@@ -77,6 +77,33 @@ class GatewayTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             self.gateway.send({'conversationId': self.cid, 'text': 'hello', 'idempotencyKey': 'no'})
         self.assertEqual(self.store.messages(self.cid), [])
+
+    def test_whatsapp_history_anchor_uses_latest_message_in_the_target_chat(self):
+        provider = Provider.__new__(Provider)
+        provider.platform, provider.account, provider.store = 'whatsapp', 'one', self.store
+        self.assertIsNone(provider.message_anchor('group'))
+        self.store.ingest(self.cid, {'externalId': 'new', 'text': 'fixture', 'direction': 'outgoing', 'timestamp': 3500})
+        self.store.ingest(self.cid, {'externalId': 'old', 'text': 'fixture', 'timestamp': 1000})
+        self.assertEqual(provider.message_anchor('group'), {'id': 'new', 'fromMe': True, 'timestampMs': 3500})
+        self.assertIsNone(provider.message_anchor('other'))
+        provider.platform = 'telegram'
+        self.assertIsNone(provider.message_anchor('group'))
+
+    def test_read_only_settings_query_uses_server_anchor_without_reserving_a_send(self):
+        provider = Provider.__new__(Provider)
+        provider.platform, provider.account, provider.store = 'whatsapp', 'one', self.store
+        self.store.ingest(self.cid, {'externalId': 'fixture', 'text': 'fixture', 'timestamp': 1794805200123})
+        calls = []
+        def call(method, params, timeout):
+            calls.append((method, params))
+            return {'known': True, 'ephemeralExpiration': 86400}
+        provider.call = call
+        self.gateway.providers['one'] = provider
+        self.assertEqual(self.gateway.whatsapp('chatSettings', {'externalId': 'group', 'anchor': {'timestampMs': 1}}),
+                         {'known': True, 'ephemeralExpiration': 86400})
+        self.assertEqual(calls, [('chatSettings', {'externalId': 'group',
+                         'anchor': {'id': 'fixture', 'fromMe': False, 'timestampMs': 1794805200123}})])
+        self.assertEqual(self.store.db.execute('SELECT COUNT(*) FROM sends').fetchone()[0], 0)
 
 
 if __name__ == '__main__':

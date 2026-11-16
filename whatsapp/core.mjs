@@ -47,7 +47,7 @@ export function normalizedMessage(raw, names = new Map()) {
 
 export function allowedRPC(method) {
   return ['status', 'connect', 'listGroups', 'selectGroup', 'startAuth', 'startPairingCode',
-    'sendToConfiguredGroup', 'sendTextToConfiguredGroup', 'sendMarkdownFileToConfiguredGroup', 'send', 'sendMedia', 'downloadMedia', 'authStatus', 'linkDevice'].includes(method);
+    'sendToConfiguredGroup', 'sendTextToConfiguredGroup', 'sendMarkdownFileToConfiguredGroup', 'send', 'sendMedia', 'downloadMedia', 'authStatus', 'linkDevice', 'chatSettings'].includes(method);
 }
 
 export const MEDIA_LIMIT = 25 * 1024 * 1024;

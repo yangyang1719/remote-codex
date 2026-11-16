@@ -2,7 +2,8 @@ import fs from 'node:fs/promises';
 import readline from 'node:readline';
 import { setTimeout as delay } from 'node:timers/promises';
 import { WhatsAppPrRuntime, readDisconnectInfo } from './vendor/runtime.mjs';
-import { authDir } from './vendor/paths.mjs';
+import { authDir, dataDir } from './vendor/paths.mjs';
+import { DisappearingSettings, sendWithDisappearing } from './disappearing.mjs';
 import { allowedRPC, normalizedMessage, usableJid } from './core.mjs';
 import { downloadMediaMessage, proto } from '@whiskeysockets/baileys';
 import { MediaFiles } from './media.mjs';
@@ -15,11 +16,14 @@ process.umask(0o077);
 console.log = console.info = console.warn = () => {};
 const emit = value => process.stdout.write(JSON.stringify(value) + '\n');
 const names = new Map();
+const disappearing = new DisappearingSettings(path.join(dataDir, 'disappearing-settings.json'));
+await disappearing.load();
 let stopping = false;
 let activated = false;
 let reconnectAttempts = 0;
 const mediaFiles = new MediaFiles(process.env.WHATSAPP_MEDIA_DIR || path.join(os.homedir(), '.local/state/remote-codex/media'));
 function publishMessage(raw, type = 'message') {
+  disappearing.observeMessage(raw, proto.Message.ProtocolMessage.Type.EPHEMERAL_SETTING);
   const value = normalizedMessage(raw, names);
   if (!value) return;
   if (value.message.media?.available) value.message._mediaSource = Buffer.from(proto.WebMessageInfo.encode(raw).finish()).toString('base64');
@@ -51,6 +55,7 @@ class ServiceRuntime extends WhatsAppPrRuntime {
     });
     const contacts = values => {
       for (const value of values) {
+        disappearing.observeChat(value);
         if (!usableJid(value.id)) continue;
         const name = value.name || value.notify || value.verifiedName || names.get(value.id) || value.id;
         names.set(value.id, name);
@@ -66,6 +71,7 @@ class ServiceRuntime extends WhatsAppPrRuntime {
       for (const raw of messages) publishMessage(raw);
     });
     socket.ev.on('messaging-history.set', ({ chats = [], contacts: roster = [], messages = [] }) => {
+      for (const chat of chats) disappearing.observeChat(chat, true);
       contacts(roster); contacts(chats);
       for (const raw of messages) publishMessage(raw);
     });
@@ -109,10 +115,10 @@ class ServiceRuntime extends WhatsAppPrRuntime {
     return groups;
   }
 
-  async sendContent(jid, content) {
+  async sendContent(jid, content, anchor) {
     if (!usableJid(jid)) throw new Error('WHATSAPP_CHAT_ID_INVALID');
     const socket = await this.ensureConnected();
-    const sent = await socket.sendMessage(jid, content);
+    const sent = await sendWithDisappearing(socket, disappearing, jid, content, anchor);
     if (!sent?.key?.id) throw new Error('WHATSAPP_SEND_RESULT_UNCONFIRMED');
     const value = normalizedMessage({ ...sent, key: { ...sent.key, fromMe: true, remoteJid: jid }, messageTimestamp: sent.messageTimestamp || Date.now()/1000 }, names);
     if (value) emit(value);
@@ -133,6 +139,11 @@ async function call(method, params) {
   if (method === 'authStatus') return link.snapshot();
   if (method === 'linkDevice') return link.begin(params.mode, params.phoneNumber);
   if (method === 'status') return { ...await runtime.status(), sessionMode: 'existing_remote_session', activated };
+  if (method === 'chatSettings') {
+    if (!usableJid(params.externalId)) throw new Error('WHATSAPP_CHAT_ID_INVALID');
+    const options = await disappearing.options(await runtime.ensureConnected(), params.externalId, params.anchor);
+    return { known: true, ephemeralExpiration: options.ephemeralExpiration || 0 };
+  }
   if (method === 'connect') {
     if (!runtime.hasCredentials()) throw new Error('WHATSAPP_EXISTING_SESSION_MISSING');
     activated = true;
@@ -141,14 +152,14 @@ async function call(method, params) {
   }
   if (method === 'send') {
     if (typeof params.text !== 'string' || !params.text.trim() || params.text.length > 4000) throw new Error('WHATSAPP_TEXT_MESSAGE_INVALID');
-    return { messageId: await runtime.sendContent(params.externalId, { text: params.text }) };
+    return { messageId: await runtime.sendContent(params.externalId, { text: params.text }, params.anchor) };
   }
   if (method === 'downloadMedia') {
     const socket = await runtime.ensureConnected();
     return mediaFiles.download(params, bytes => proto.WebMessageInfo.decode(bytes), downloadMediaMessage, socket);
   }
   if (method === 'sendMedia') {
-    return { messageId: await runtime.sendContent(params.externalId, await mediaFiles.content(params)) };
+    return { messageId: await runtime.sendContent(params.externalId, await mediaFiles.content(params), params.anchor) };
   }
   if (method === 'listGroups') return runtime.publishGroups();
   if (method === 'selectGroup') return runtime.selectGroup(params.groupJid);
@@ -163,6 +174,7 @@ async function shutdown() {
   stopping = true; activated = false;
   runtime.socket?.end(new Error('service_stop'));
   await runtime.credentialsSavePromise.catch(() => {});
+  await disappearing.writes.catch(() => {});
   process.exit(0);
 }
 process.on('SIGTERM', shutdown);

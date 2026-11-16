@@ -33,6 +33,9 @@ id_ed25519
 *.key
 auth.json
 creds.json
+# WhatsApp per-chat timer cache contains private chat identifiers.
+disappearing-settings.json
+disappearing-settings.json.new
 *.sqlite
 *.sqlite3
 *.sqlite-wal

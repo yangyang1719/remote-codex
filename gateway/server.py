@@ -243,10 +243,19 @@ class Provider:
             with self.lock:
                 self.pending.pop(rid, None)
 
+    def message_anchor(self, external):
+        if self.platform != 'whatsapp':
+            return None
+        cid = self.platform + ':' + self.account + ':' + external
+        with self.store.lock:
+            row = self.store.db.execute('SELECT external_id,direction,timestamp FROM messages WHERE conversation_id=? ORDER BY timestamp DESC,rowid DESC LIMIT 1', (cid,)).fetchone()
+        # Baileys forwards this value directly to oldestMsgTimestampMs on the wire.
+        return {'id': row['external_id'], 'fromMe': row['direction'] == 'outgoing', 'timestampMs': row['timestamp']} if row else None
+
     def send(self, external, text, key):
         if self.status != 'connected':
             raise RuntimeError('远端消息账号尚未连接。')
-        return self.call('send', {'externalId': external, 'text': text, 'idempotencyKey': key}, timeout=35)['messageId']
+        return self.call('send', {'externalId': external, 'text': text, 'idempotencyKey': key, 'anchor': self.message_anchor(external)}, timeout=35)['messageId']
 
 
 class Gateway:
@@ -260,12 +269,15 @@ class Gateway:
             self.providers[provider['id']] = Provider(provider, self.store, self.events)
 
     def whatsapp(self, method, params=None):
-        allowed = {'status', 'connect', 'listGroups', 'selectGroup', 'startAuth', 'startPairingCode', 'sendToConfiguredGroup', 'sendTextToConfiguredGroup', 'sendMarkdownFileToConfiguredGroup', 'authStatus', 'linkDevice'}
+        allowed = {'status', 'connect', 'listGroups', 'selectGroup', 'startAuth', 'startPairingCode', 'sendToConfiguredGroup', 'sendTextToConfiguredGroup', 'sendMarkdownFileToConfiguredGroup', 'authStatus', 'linkDevice', 'chatSettings'}
         if method not in allowed:
             raise ValueError('WhatsApp method not allowed')
         provider = next((p for p in self.providers.values() if p.platform == 'whatsapp'), None)
         if provider is None:
             raise RuntimeError('WhatsApp 独立服务未配置。')
+        if method == 'chatSettings':
+            params = dict(params or {})
+            params['anchor'] = provider.message_anchor(params.get('externalId', ''))
         return provider.call(method, params, timeout=75)
 
     def telegram(self, method, params=None):
@@ -306,7 +318,7 @@ class Gateway:
         try:
             if media:
                 # The worker receives the cache identity, never a client-controlled file path or URL.
-                external = provider.call('sendMedia', {'externalId': conversation['externalId'], 'text': text, 'media': {**self.store.media.public(media), 'id': media['cache_id']}}, timeout=100)['messageId']
+                external = provider.call('sendMedia', {'externalId': conversation['externalId'], 'text': text, 'media': {**self.store.media.public(media), 'id': media['cache_id']}, **({'anchor': provider.message_anchor(conversation['externalId'])} if getattr(provider, 'platform', None) == 'whatsapp' else {})}, timeout=100)['messageId']
             else:
                 external = provider.send(conversation['externalId'], text, key)
             message = self.store.ingest(cid, {'externalId': external, 'author': '你', 'text': text, 'direction': 'outgoing', 'status': 'sent'})
